@@ -6,14 +6,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const newGoalInput = document.getElementById('newGoalInput') as HTMLInputElement | null;
     const addGoalBtn = document.getElementById('addGoalBtn') as HTMLButtonElement | null;
     const goalsList = document.getElementById('goalsList') as HTMLElement | null;
-    const educationalChk = document.getElementById('educationalChk') as HTMLInputElement | null;
     const funLimit = document.getElementById('funLimit') as HTMLInputElement | null;
     const saveBtn = document.getElementById('saveBtn') as HTMLButtonElement | null;
     const genQuizBtn = document.getElementById('genQuizBtn') as HTMLButtonElement | null;
-    const clearKeysBtn = document.getElementById('clearKeysBtn') as HTMLButtonElement | null;
     const quizArea = document.getElementById('quizArea') as HTMLElement | null;
 
-    const settings = await browser.runtime.sendMessage({ type: 'getSettings' });
+    let settings = await browser.runtime.sendMessage({ type: 'getSettings' });
     // migrate old single-goal to goals array if needed
     if (settings && typeof settings.goal === 'string' && !Array.isArray(settings.goals)) {
         settings.goals = settings.goals || [];
@@ -21,118 +19,114 @@ document.addEventListener('DOMContentLoaded', async () => {
         delete settings.goal;
         await browser.runtime.sendMessage({ type: 'saveSettings', settings });
     }
-    if (educationalChk) educationalChk.checked = !!settings.isEducationalGoal;
     if (funLimit) funLimit.value = settings.funLimitMinutes || 30;
     renderGoals(settings.goals || []);
 
     saveBtn?.addEventListener('click', async () => {
-        // Save existing settings (goals already saved via operations); just persist flags and limits
-        settings.isEducationalGoal = educationalChk?.checked;
         settings.funLimitMinutes = Number(funLimit?.value) || 0;
         await browser.runtime.sendMessage({ type: 'saveSettings', settings });
-        alert('Saved');
+        createToast('Settings saved', 'success');
     });
 
+    // Add goal on Enter
+    newGoalInput?.addEventListener('keydown', async (ev) => {
+        if (ev.key === 'Enter') {
+            ev.preventDefault();
+            await handleAddGoal();
+        }
+    });
+
+    addGoalBtn?.addEventListener('click', async () => {
+        await handleAddGoal();
+    });
+
+    async function handleAddGoal() {
+        const val = (newGoalInput?.value || '').trim();
+        if (!val) return;
+
+        // Ask background to validate with Nemotron (returns { ok, result: 'Y'|'N', reason })
+        const resp = await browser.runtime.sendMessage({ type: 'validateGoalNemotron', goal: val });
+        if (!resp || !resp.ok) {
+            // Fallback to local validation rule
+            const v = validateGoal(val);
+            if (!v.ok) {
+                showValidationDialog(v.reason || 'Goal not specific enough');
+                return;
+            }
+        }
+
+        if (resp && resp.result === 'N') {
+            // Not educational enough — show slightly red dialog and do not clear input
+            showValidationDialog(resp.reason || 'Goal does not appear sufficiently educational or descriptive.');
+            return;
+        }
+
+        // Ok — add and autosave
+        settings = await browser.runtime.sendMessage({ type: 'getSettings' });
+        settings.goals = settings.goals || [];
+        settings.goals.push(val);
+        await browser.runtime.sendMessage({ type: 'saveSettings', settings });
+        renderGoals(settings.goals);
+        if (newGoalInput) newGoalInput.value = '';
+        createToast('Goal added', 'success');
+    }
+
+    // Quiz generation and rendering
     genQuizBtn?.addEventListener('click', async () => {
         if (!quizArea) return;
         quizArea.style.display = 'block';
         quizArea.innerHTML = '<div>Generating quiz…</div>';
         const quiz = await browser.runtime.sendMessage({ type: 'generateQuiz' });
-        renderQuiz(quizArea, quiz);
-    });
-
-    clearKeysBtn?.addEventListener('click', async () => {
-        const s = await browser.runtime.sendMessage({ type: 'getSettings' });
-        let changed = false;
-        ['openrouterApiKey', 'openrouterUrl'].forEach(k => {
-            if (s && Object.prototype.hasOwnProperty.call(s, k)) {
-                delete s[k];
-                changed = true;
-            }
-        });
-        if (changed) {
-            await browser.runtime.sendMessage({ type: 'saveSettings', settings: s });
-            alert('Cleared stored API keys from settings. If you used .env, it remains unchanged.');
-            location.reload();
-        } else {
-            alert('No stored API keys found in settings.');
-        }
-    });
-
-    function renderQuiz(el: HTMLElement, quiz: any) {
-        if (!quiz || !quiz.questions || quiz.questions.length === 0) {
-            el.innerHTML = '<div>Could not generate quiz (no API key or error). Try saving your API key first or use fallback).</div>';
+        // Expect quiz to be an array of question objects
+        if (!quiz || !Array.isArray(quiz) || quiz.length === 0) {
+            quizArea.innerHTML = '<div>Could not generate quiz (no API key or parse error). Try again later.</div>';
             return;
         }
-        el.innerHTML = '';
-        const form = document.createElement('form');
-        form.id = 'quizForm';
-        quiz.questions.slice(0, 5).forEach((q: any, i: number) => {
-            const div = document.createElement('div');
-            div.className = 'quiz-q';
-            const label = document.createElement('label');
-            label.textContent = `${i + 1}. ${q.q}`;
-            div.appendChild(label);
-            if (q.type === 'mc' && Array.isArray(q.options)) {
-                q.options.forEach((opt: string) => {
-                    const r = document.createElement('div');
-                    r.innerHTML = `<label><input type="radio" name="q${i}" value="${opt}" /> ${opt}</label>`;
-                    div.appendChild(r);
-                });
-            } else {
-                const ta = document.createElement('input');
-                ta.type = 'text';
-                ta.name = `q${i}`;
-                div.appendChild(ta);
-            }
-            form.appendChild(div);
-        });
+        renderQuizCarousel(quizArea, quiz.slice(0, 5));
+    });
 
-        const timer = document.createElement('div');
-        timer.id = 'quizTimer';
-        timer.textContent = 'Time left: 5:00';
-        el.appendChild(timer);
-        const submit = document.createElement('button');
-        submit.textContent = 'Submit Quiz';
-        submit.type = 'button';
-        submit.addEventListener('click', () => submitQuiz(form, quiz));
-        el.appendChild(form);
-        el.appendChild(submit);
-
-        // start 5-minute countdown
-        let remaining = 5 * 60;
-        const interval = setInterval(() => {
-            remaining -= 1;
-            const m = Math.floor(remaining / 60).toString().padStart(1, '0');
-            const s = (remaining % 60).toString().padStart(2, '0');
-            timer.textContent = `Time left: ${m}:${s}`;
-            if (remaining <= 0) {
-                clearInterval(interval);
-                alert('Time is up — quiz failed');
-            }
-        }, 1000);
+    // Small helper: toast popup bottom-right
+    function createToast(text: string, type: 'success' | 'error' = 'success') {
+        const t = document.createElement('div');
+        t.textContent = text;
+        t.style.position = 'fixed';
+        t.style.right = '16px';
+        t.style.bottom = '16px';
+        t.style.padding = '10px 14px';
+        t.style.borderRadius = '6px';
+        t.style.boxShadow = '0 2px 6px rgba(0,0,0,0.2)';
+        t.style.zIndex = '99999';
+        t.style.color = '#fff';
+        t.style.fontSize = '13px';
+        t.style.background = type === 'success' ? '#2e7d32' : '#b00020';
+        document.body.appendChild(t);
+        setTimeout(() => {
+            t.style.transition = 'opacity 0.35s ease';
+            t.style.opacity = '0';
+            setTimeout(() => t.remove(), 400);
+        }, 2000);
     }
 
-    async function submitQuiz(form: HTMLFormElement, quiz: any) {
-        const formData = new FormData(form);
-        let answered = 0;
-        for (let i = 0; i < Math.min(5, quiz.questions.length); i++) {
-            const val = formData.get(`q${i}`);
-            if (val && val.toString().trim().length > 0) answered++;
+    function showValidationDialog(msg: string) {
+        // Slightly red dialog near the input
+        let d = document.getElementById('goalValidationDialog') as HTMLElement | null;
+        if (!d) {
+            d = document.createElement('div');
+            d.id = 'goalValidationDialog';
+            d.style.position = 'relative';
+            d.style.marginTop = '8px';
+            d.style.padding = '8px';
+            d.style.borderRadius = '6px';
+            d.style.background = 'rgba(200,40,40,0.08)';
+            d.style.border = '1px solid rgba(200,40,40,0.2)';
+            d.style.color = '#700';
+            const container = document.querySelector('.container');
+            container?.insertBefore(d, container.firstChild?.nextSibling || null);
         }
-        const score = (answered / Math.min(5, quiz.questions.length)) * 100;
-        if (score >= 60) {
-            const s = await browser.runtime.sendMessage({ type: 'getSettings' });
-            s.blockingEnabled = false;
-            await browser.runtime.sendMessage({ type: 'saveSettings', settings: s });
-            alert('Quiz passed — blocking disabled. You can re-enable in settings.');
-            location.reload();
-        } else {
-            alert(`Quiz failed — score ${Math.round(score)}%. Need >= 60%.`);
-        }
+        d.textContent = msg;
     }
 
-    // Goals UI
+    // Render goals with edit/delete and move up/down
     function renderGoals(goals: string[]) {
         if (!goalsList) return;
         goalsList.innerHTML = '';
@@ -151,6 +145,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             text.style.flex = '1';
             text.textContent = g;
 
+            const up = document.createElement('button');
+            up.textContent = '↑';
+            up.title = 'Move up';
+            up.style.marginLeft = '8px';
+            up.disabled = i === 0;
+            up.addEventListener('click', () => moveGoal(i, i - 1));
+
+            const down = document.createElement('button');
+            down.textContent = '↓';
+            down.title = 'Move down';
+            down.style.marginLeft = '6px';
+            down.disabled = i === goals.length - 1;
+            down.addEventListener('click', () => moveGoal(i, i + 1));
+
             const edit = document.createElement('button');
             edit.textContent = 'Edit';
             edit.style.marginLeft = '8px';
@@ -162,26 +170,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             del.addEventListener('click', () => deleteGoal(i));
 
             row.appendChild(text);
+            row.appendChild(up);
+            row.appendChild(down);
             row.appendChild(edit);
             row.appendChild(del);
             goalsList.appendChild(row);
         });
     }
 
-    async function addGoal() {
-        const val = (newGoalInput?.value || '').trim();
-        const settingsNow = await browser.runtime.sendMessage({ type: 'getSettings' });
-        const goals = settingsNow.goals || [];
-        const validation = validateGoal(val);
-        if (!validation.ok) {
-            alert(`Goal not specific enough: ${validation.reason}`);
-            return;
-        }
-        goals.push(val);
-        settingsNow.goals = goals;
-        await browser.runtime.sendMessage({ type: 'saveSettings', settings: settingsNow });
-        if (newGoalInput) newGoalInput.value = '';
-        renderGoals(goals);
+    async function moveGoal(from: number, to: number) {
+        settings = await browser.runtime.sendMessage({ type: 'getSettings' });
+        settings.goals = settings.goals || [];
+        if (to < 0 || to >= settings.goals.length) return;
+        const arr = settings.goals;
+        const [item] = arr.splice(from, 1);
+        arr.splice(to, 0, item);
+        settings.goals = arr;
+        await browser.runtime.sendMessage({ type: 'saveSettings', settings });
+        renderGoals(settings.goals);
     }
 
     async function editGoal(index: number) {
@@ -191,15 +197,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         const updated = prompt('Edit goal (make it specific):', current);
         if (updated === null) return; // cancelled
         const val = updated.trim();
-        const validation = validateGoal(val);
-        if (!validation.ok) {
-            alert(`Goal not specific enough: ${validation.reason}`);
+
+        // Validate with nemotron if possible
+        const resp = await browser.runtime.sendMessage({ type: 'validateGoalNemotron', goal: val });
+        if (resp && resp.result === 'N') {
+            showValidationDialog(resp.reason || 'Goal not educational enough.');
             return;
         }
+
         goals[index] = val;
         settingsNow.goals = goals;
         await browser.runtime.sendMessage({ type: 'saveSettings', settings: settingsNow });
         renderGoals(goals);
+        createToast('Goal updated', 'success');
     }
 
     async function deleteGoal(index: number) {
@@ -210,9 +220,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         settingsNow.goals = goals;
         await browser.runtime.sendMessage({ type: 'saveSettings', settings: settingsNow });
         renderGoals(goals);
+        createToast('Goal deleted', 'success');
     }
 
-    // Basic specificity validation: require at least 6 words AND contain a reason/verb phrase
+    // Local fallback validation
     function validateGoal(text: string) {
         if (!text || text.length < 20) return { ok: false, reason: 'Too short; be more specific (>= 20 chars).' };
         const words = text.split(/\s+/).filter(Boolean);
@@ -225,7 +236,111 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { ok: true };
     }
 
-    addGoalBtn?.addEventListener('click', addGoal);
+    // Render a quiz carousel (one question at a time). Expected format: [{question: '', answer_choices: [{choice:'', isCorrect:true}, ...]}, ...]
+    function renderQuizCarousel(container: HTMLElement, questions: any[]) {
+        container.innerHTML = '';
+        let idx = 0;
+        const state: any = { answers: Array(questions.length).fill(null) };
+
+        const qBox = document.createElement('div');
+        qBox.style.border = '1px solid #ddd';
+        qBox.style.padding = '12px';
+        qBox.style.borderRadius = '8px';
+        qBox.style.background = '#fff';
+        container.appendChild(qBox);
+
+        const nav = document.createElement('div');
+        nav.style.marginTop = '8px';
+        container.appendChild(nav);
+
+        function render() {
+            qBox.innerHTML = '';
+            const q = questions[idx];
+            const header = document.createElement('div');
+            header.textContent = `Question ${idx + 1} of ${questions.length}`;
+            header.style.fontWeight = '600';
+            header.style.marginBottom = '8px';
+            qBox.appendChild(header);
+
+            const qText = document.createElement('div');
+            qText.textContent = q.question;
+            qText.style.marginBottom = '10px';
+            qBox.appendChild(qText);
+
+            const choices = document.createElement('div');
+            if (Array.isArray(q.answer_choices)) {
+                q.answer_choices.forEach((c: any, ci: number) => {
+                    const label = document.createElement('label');
+                    label.style.display = 'block';
+                    const input = document.createElement('input');
+                    input.type = 'radio';
+                    input.name = `q${idx}`;
+                    input.checked = state.answers[idx] === ci;
+                    input.addEventListener('change', () => state.answers[idx] = ci);
+                    label.appendChild(input);
+                    label.appendChild(document.createTextNode(' ' + c.choice));
+                    choices.appendChild(label);
+                });
+            } else {
+                const ta = document.createElement('input');
+                ta.type = 'text';
+                ta.value = state.answers[idx] || '';
+                ta.addEventListener('input', () => state.answers[idx] = ta.value);
+                choices.appendChild(ta);
+            }
+            qBox.appendChild(choices);
+
+            nav.innerHTML = '';
+            const prev = document.createElement('button');
+            prev.textContent = 'Previous';
+            prev.disabled = idx === 0;
+            prev.addEventListener('click', () => { idx = Math.max(0, idx - 1); render(); });
+            nav.appendChild(prev);
+
+            const next = document.createElement('button');
+            next.textContent = idx === questions.length - 1 ? 'Submit' : 'Next';
+            next.style.marginLeft = '8px';
+            next.addEventListener('click', async () => {
+                if (idx === questions.length - 1) {
+                    // Submit
+                    await submitQuizAnswers(questions, state.answers);
+                } else {
+                    idx = Math.min(questions.length - 1, idx + 1);
+                    render();
+                }
+            });
+            nav.appendChild(next);
+        }
+
+        render();
+    }
+
+    async function submitQuizAnswers(questions: any[], answers: any[]) {
+        let correct = 0;
+        let total = 0;
+        for (let i = 0; i < questions.length; i++) {
+            const q = questions[i];
+            total++;
+            if (Array.isArray(q.answer_choices)) {
+                const selected = answers[i];
+                if (selected == null) continue;
+                if (q.answer_choices[selected] && q.answer_choices[selected].isCorrect) correct++;
+            } else {
+                // short answer: treat non-empty as correct for now
+                if (answers[i] && String(answers[i]).trim().length > 0) correct++;
+            }
+        }
+        const score = Math.round((correct / total) * 100);
+        if (score >= 60) {
+            const s = await browser.runtime.sendMessage({ type: 'getSettings' });
+            s.blockingEnabled = false;
+            await browser.runtime.sendMessage({ type: 'saveSettings', settings: s });
+            createToast('Quiz passed — blocking disabled', 'success');
+            location.reload();
+        } else {
+            alert(`Quiz failed — score ${score}%. Need >= 60%.`);
+        }
+    }
 });
 
 export { };

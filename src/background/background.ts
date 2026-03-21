@@ -67,14 +67,14 @@ async function fetchTranscript(videoId: string): Promise<string | null> {
     }
 }
 
-async function callRouterClassify(prompt: string, _settings: any): Promise<any> {
+async function callRouterClassify(prompt: string, _settings: any, model?: string): Promise<any> {
     const key = ENV_VARS.OPENROUTER_API_KEY || null;
     const routerUrl = ENV_VARS.OPENROUTER_URL || 'https://api.openrouter.ai/v1/responses';
     if (!key) return { error: 'no_api_key' };
 
     try {
-        const body = {
-            model: 'gpt-4o-mini',
+        const body: any = {
+            model: model || 'gpt-4o-mini',
             input: prompt
         };
 
@@ -140,28 +140,58 @@ async function generateQuiz(settings: any): Promise<any> {
     const goals = Array.isArray(settings.goals) ? settings.goals : (settings.goal ? [settings.goal] : []);
     const goal = goals.length > 0 ? goals[0] : 'your stated goal';
     if (!ENV_VARS.OPENROUTER_API_KEY) {
-        return {
-            questions: [
-                { q: `What is your learning goal? (short answer)`, type: 'short' },
-                { q: `Name one core topic related to: ${goal}`, type: 'short' },
-                { q: `Why is this goal valuable?`, type: 'short' },
-                { q: `Give one resource you could use to learn ${goal}`, type: 'short' },
-                { q: `How will you practice what you learn about ${goal}?`, type: 'short' }
-            ]
-        };
+        // fallback: return simple short-answer questions as an array
+        return [
+            { question: `What is your learning goal? (short answer)`, answer_choices: [] },
+            { question: `Name one core topic related to: ${goal}`, answer_choices: [] },
+            { question: `Why is this goal valuable?`, answer_choices: [] },
+            { question: `Give one resource you could use to learn ${goal}`, answer_choices: [] },
+            { question: `How will you practice what you learn about ${goal}?`, answer_choices: [] }
+        ];
     }
-    const prompt = `Create 5 short quiz questions (mix of multiple-choice and short answer) about the learning goal: "${goal}". For each question return JSON with keys: q, type (mc or short), options (if mc). Return as JSON: {"questions":[...]}.`;
-    const routerResp = await callRouterClassify(prompt, settings);
-    if (routerResp.error) return { questions: [] };
-    try {
-        const jsonStart = routerResp.text.indexOf('{');
-        const jsonEnd = routerResp.text.lastIndexOf('}');
-        const jsonStr = jsonStart >= 0 && jsonEnd >= 0 ? routerResp.text.slice(jsonStart, jsonEnd + 1) : routerResp.text;
-        const parsed = JSON.parse(jsonStr);
-        return parsed;
-    } catch (err) {
-        return { questions: [] };
+
+    // Ask Nemotron to return EXACTLY a JSON array of 5 objects with this schema:
+    // [{question: string, answer_choices:[{choice:string, isCorrect: boolean}, ...]}, ...]
+    const modelName = 'nvidia/nemotron-3-super-120b-a12b:free';
+    const basePrompt = `You are an assistant that MUST reply ONLY with a JSON array (no surrounding text) of exactly 5 items. Each item must be an object with the keys: question (string), answer_choices (array). For multiple-choice questions supply 3-4 answer_choices objects with choice (string) and isCorrect (true/false). For short-answer questions, return answer_choices as an empty array. Make a mix of easy to hard questions derived from the user's goals. Do NOT include explanations or extra text. Output EXACTLY valid JSON.\nGoals: ${goals.map((g: string, i: number) => `${i + 1}. ${g}`).join('\n')}\nGenerate 5 questions now as an array.`;
+
+    // Try a few times until we get parseable JSON in the expected format
+    for (let attempt = 0; attempt < 3; attempt++) {
+        const routerResp = await callRouterClassify(basePrompt, settings, modelName);
+        if (routerResp.error) {
+            // if router returned an error, bail with fallback
+            return [];
+        }
+        const text = routerResp.text || '';
+        // try to locate JSON and parse
+        try {
+            const jsonStart = text.indexOf('[');
+            const jsonEnd = text.lastIndexOf(']');
+            const jsonStr = jsonStart >= 0 && jsonEnd >= 0 ? text.slice(jsonStart, jsonEnd + 1) : text;
+            const parsed = JSON.parse(jsonStr);
+            // validate shape: array of objects with question and answer_choices
+            if (Array.isArray(parsed) && parsed.length >= 1) {
+                const okShape = parsed.every((it: any) => typeof it.question === 'string' && Array.isArray(it.answer_choices));
+                if (okShape) return parsed;
+            }
+        } catch (err) {
+            // ignore and retry with a stricter prompt
+        }
+
+        // If we reach here, ask the model again with a corrective instruction
+        const retryPrompt = `INVALID OUTPUT DETECTED. Reply ONLY with a valid JSON array using this exact shape: [{"question":"...","answer_choices":[{"choice":"..","isCorrect":true}, ...]}, ...]. Nothing else. Generate 5 items based on the goals: ${goals.join(' | ')}.`;
+        await callRouterClassify(retryPrompt, settings, modelName);
+        // loop to next attempt
     }
+
+    // If all attempts failed, return fallback simple short answer array
+    return [
+        { question: `What is your learning goal? (short answer)`, answer_choices: [] },
+        { question: `Name one core topic related to: ${goal}`, answer_choices: [] },
+        { question: `Why is this goal valuable?`, answer_choices: [] },
+        { question: `Give one resource you could use to learn ${goal}`, answer_choices: [] },
+        { question: `How will you practice what you learn about ${goal}?`, answer_choices: [] }
+    ];
 }
 
 // Message handler
@@ -191,6 +221,30 @@ browser.runtime.onMessage.addListener(async (msg: any, _sender: any) => {
     if (msg && msg.type === 'getSettings') {
         const s = await getSettings();
         return s;
+    }
+
+    if (msg && msg.type === 'validateGoalNemotron') {
+        const goal = msg.goal || '';
+        const settings = await getSettings();
+        const modelName = 'nvidia/nemotron-3-super-120b-a12b:free';
+        const prompt = `Decide whether the following user learning goal is educational and sufficiently descriptive for a learning plan. Reply ONLY with a single capital letter on the first line: Y (yes, it's educational/descriptive) or N (no). On the second line provide a very short reason (max 30 words). No other text.
+\nGoal:\n${goal}`;
+        const routerResp = await callRouterClassify(prompt, settings, modelName);
+        if (routerResp.error) return { ok: false, error: routerResp.error };
+        const text = (routerResp.text || '').trim();
+        const firstLine = text.split(/\n+/)[0] || '';
+        const letter = (firstLine.trim().charAt(0) || '').toUpperCase();
+        const reason = text.split(/\n+/).slice(1).join(' ').trim();
+        if (letter === 'Y') return { ok: true, result: 'Y', reason };
+        if (letter === 'N') return { ok: true, result: 'N', reason };
+        // couldn't parse, fallback to simple heuristic
+        const fallback = (() => {
+            if (!goal || goal.length < 20) return { result: 'N', reason: 'Too short' };
+            const words = goal.split(/\s+/).filter(Boolean);
+            if (words.length < 6) return { result: 'N', reason: 'Too few words' };
+            return { result: 'Y', reason: 'Looks ok' };
+        })();
+        return { ok: true, result: fallback.result, reason: fallback.reason };
     }
 
     if (msg && msg.type === 'saveSettings') {
