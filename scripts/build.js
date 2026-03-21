@@ -38,7 +38,7 @@ async function copyStatic() {
     }
 }
 
-async function buildAll(overwriteRoot) {
+async function buildAll(overwriteRoot, target) {
     await fs.mkdir(distRoot, { recursive: true });
 
     for (const b of builds) {
@@ -65,6 +65,23 @@ async function buildAll(overwriteRoot) {
     }
 
     await copyStatic();
+    // Copy the correct manifest for the target into dist
+    try {
+        const manifestSrc = target === 'firefox'
+            ? path.join(projectRoot, 'manifest.firefox.json')
+            : path.join(projectRoot, 'manifest.json');
+        const manifestDest = path.join(distRoot, 'manifest.json');
+        await fs.copyFile(manifestSrc, manifestDest);
+        console.log(`Copied manifest for target '${target}': ${path.relative(projectRoot, manifestSrc)} -> ${path.relative(projectRoot, manifestDest)}`);
+        if (overwriteRoot) {
+            // also copy manifest to project root manifest.json (useful for temporary firefox load that requires manifest.json at root)
+            const rootDest = path.join(projectRoot, 'manifest.json');
+            await fs.copyFile(manifestSrc, rootDest);
+            console.log(`Also copied manifest to root: ${path.relative(projectRoot, rootDest)}`);
+        }
+    } catch (err) {
+        console.warn('Could not copy manifest for target (missing?):', err && err.message);
+    }
     if (overwriteRoot) {
         try {
             await fs.copyFile(path.join(distRoot, 'popup.html'), path.join(projectRoot, 'popup.html'));
@@ -77,7 +94,12 @@ async function buildAll(overwriteRoot) {
 async function main() {
     const args = process.argv.slice(2);
     const overwriteRoot = args.includes('--overwrite-root');
-    await buildAll(overwriteRoot);
+    // parse --target=firefox|chrome (default: chrome)
+    let target = 'chrome';
+    for (const a of args) {
+        if (a.startsWith('--target=')) target = a.split('=')[1] || 'chrome';
+    }
+    await buildAll(overwriteRoot, target);
     console.log('\nBuild complete.');
 }
 

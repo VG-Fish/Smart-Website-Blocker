@@ -1,24 +1,24 @@
 {
-    "manifest_version": 3,
-    "name": "Smart Site Blocker",
+    "manifest_version": 2,
+    "name": "Smart Site Blocker (Firefox)",
     "version": "0.1.0",
-    "description": "Smartly block websites (prototype). Starts by protecting YouTube: tracks fun time, allows educational videos aligned with goals.",
+    "description": "Smartly block websites (prototype). Firefox-friendly MV2 manifest for temporary installs.",
     "permissions": [
         "storage",
         "tabs",
-        "scripting",
-        "activeTab"
-    ],
-    "host_permissions": [
+        "activeTab",
         "*://*.youtube.com/*",
         "*://youtu.be/*",
         "*://r.jina.ai/*",
         "*://api.openrouter.ai/*"
     ],
     "background": {
-        "service_worker": "dist/background.js"
+        "scripts": [
+            "dist/background.js"
+        ],
+        "persistent": false
     },
-    "action": {
+    "browser_action": {
         "default_popup": "src/ui/popup.html",
         "default_icon": {
             "48": "icons/icon48.svg"
