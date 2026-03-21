@@ -5,6 +5,7 @@
 const esbuild = require('esbuild');
 const fs = require('fs').promises;
 const path = require('path');
+const child_process = require('child_process');
 
 const projectRoot = path.resolve(__dirname, '..');
 const srcRoot = path.join(projectRoot, 'src');
@@ -39,6 +40,19 @@ async function copyStatic() {
 }
 
 async function buildAll(overwriteRoot, target) {
+    console.log('Project root:', `'${projectRoot}'`);
+    console.log('Source root:', `'${srcRoot}'`);
+    console.log('Dist root:', `'${distRoot}'`);
+    let hadEsbuildErrors = false;
+    // Run TypeScript compiler first using npx tsc. This ensures type errors fail the build early.
+    try {
+        console.log('Running TypeScript compiler: npx tsc');
+        child_process.execSync('npx tsc', { stdio: 'inherit', cwd: projectRoot });
+        console.log('TypeScript compiler finished successfully.');
+    } catch (err) {
+        console.error('TypeScript compilation failed. Aborting build.');
+        process.exit(err.status || 1);
+    }
     await fs.mkdir(distRoot, { recursive: true });
 
     for (const b of builds) {
@@ -61,7 +75,13 @@ async function buildAll(overwriteRoot, target) {
             }
         } catch (err) {
             console.error('esbuild failed for', b.entry, err && err.message);
+            hadEsbuildErrors = true;
         }
+    }
+
+    if (hadEsbuildErrors) {
+        console.error('\nOne or more bundles failed to build. Aborting.');
+        process.exit(1);
     }
 
     await copyStatic();

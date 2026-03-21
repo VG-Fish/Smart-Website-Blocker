@@ -67,7 +67,7 @@ async function fetchTranscript(videoId: string): Promise<string | null> {
     }
 }
 
-async function callRouterClassify(prompt: string, settings: any): Promise<any> {
+async function callRouterClassify(prompt: string, _settings: any): Promise<any> {
     const key = ENV_VARS.OPENROUTER_API_KEY || null;
     const routerUrl = ENV_VARS.OPENROUTER_URL || 'https://api.openrouter.ai/v1/responses';
     if (!key) return { error: 'no_api_key' };
@@ -105,7 +105,7 @@ async function callRouterClassify(prompt: string, settings: any): Promise<any> {
     }
 }
 
-async function checkAlignment(videoId: string, transcript: string, settings: any): Promise<any> {
+async function checkAlignment(_videoId: string, transcript: string, settings: any): Promise<any> {
     const goals = Array.isArray(settings.goals) ? settings.goals : (settings.goal ? [settings.goal] : []);
     if (goals.length === 0) return { ok: true, aligned: false, score: 0, reasons: 'no goals set' };
 
@@ -165,7 +165,7 @@ async function generateQuiz(settings: any): Promise<any> {
 }
 
 // Message handler
-browser.runtime.onMessage.addListener(async (msg: any, sender: any) => {
+browser.runtime.onMessage.addListener(async (msg: any, _sender: any) => {
     if (msg && msg.type === 'fetchTranscriptAndCheck') {
         const { videoId } = msg;
         const settings = await getSettings();

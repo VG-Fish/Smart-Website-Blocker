@@ -1,10 +1,5 @@
 // content_script.ts — injected into YouTube pages (converted to TypeScript)
 
-function formatSeconds(s: number): string {
-    const m = Math.floor(s / 60);
-    const sec = Math.floor(s % 60).toString().padStart(2, '0');
-    return `${m}:${sec}`;
-}
 
 // Overlay UI
 function createOverlay(): void {
@@ -46,7 +41,6 @@ function getYouTubeVideoId(): string | null {
 }
 
 // Track playing time to count toward fun time (only while under limit)
-let playing = false;
 let playStart: number | null = null;
 let usageInterval: number | null = null as any;
 
@@ -135,13 +129,11 @@ function hookVideoElement(videoEl: HTMLVideoElement | null): void {
             // ensure paused
             videoEl.pause();
         } else {
-            playing = true;
             startUsageTimer();
         }
     });
 
     videoEl.addEventListener('pause', () => {
-        playing = false;
         stopUsageTimer();
     });
 }

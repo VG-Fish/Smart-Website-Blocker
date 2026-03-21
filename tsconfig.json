@@ -7,11 +7,15 @@
             "DOM",
             "ES2020"
         ],
-        "strict": false,
+        "strict": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "noImplicitAny": true,
+        "noImplicitReturns": true,
         "esModuleInterop": true,
         "forceConsistentCasingInFileNames": true,
         "skipLibCheck": true,
-        "outDir": "dist_ts"
+        "outDir": "dist"
     },
     "include": [
         "src/**/*",
