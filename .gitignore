@@ -1,0 +1,7 @@
+.env
+.DS_Store
+.vscode/
+*.log
+
+# Ignore generated build output
+dist/

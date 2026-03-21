@@ -1,0 +1,47 @@
+{
+    "manifest_version": 3,
+    "name": "Smart Site Blocker",
+    "version": "0.1.0",
+    "description": "Smartly block websites (prototype). Starts by protecting YouTube: tracks fun time, allows educational videos aligned with goals.",
+    "permissions": [
+        "storage",
+        "tabs",
+        "scripting",
+        "activeTab"
+    ],
+    "host_permissions": [
+        "*://*.youtube.com/*",
+        "*://youtu.be/*",
+        "*://r.jina.ai/*",
+        "*://api.openrouter.ai/*"
+    ],
+    "background": {
+        "service_worker": "dist/background.js"
+    },
+    "action": {
+        "default_popup": "src/ui/popup.html",
+        "default_icon": {
+            "48": "icons/icon48.svg"
+        }
+    },
+    "options_ui": {
+        "page": "src/ui/options.html",
+        "open_in_tab": true
+    },
+    "icons": {
+        "48": "icons/icon48.svg",
+        "128": "icons/icon128.svg"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "*://*.youtube.com/*",
+                "*://youtu.be/*"
+            ],
+            "js": [
+                "dist/content_script.js"
+            ],
+            "run_at": "document_idle"
+        }
+    ]
+}

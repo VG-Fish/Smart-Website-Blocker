@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>Smart Site Blocker Settings (source)</title>
+    <link rel="stylesheet" href="../ui/styles.css" />
+</head>
+
+<body>
+    <div class="container">
+        <h1>Settings</h1>
+
+        <label>Your learning goals (make each goal specific — e.g., "I want to learn about using superposition in
+            circuits.")</label>
+        <div class="row">
+            <input id="newGoalInput" type="text"
+                placeholder="e.g., I want to learn about using superposition in circuits." />
+            <button id="addGoalBtn">Add Goal</button>
+        </div>
+        <div id="goalsList" style="margin-top:8px"></div>
+        <div class="row">
+            <label><input id="educationalChk" type="checkbox" /> Treat goals as educational</label>
+        </div>
+
+        <label>Fun time limit (minutes per day):</label>
+        <input id="funLimit" type="number" min="0" />
+
+        <div style="font-size:0.95em;color:#333;margin:6px 0;">
+            To avoid storing sensitive API keys in extension storage, place your API keys in a local <code>.env</code>
+            file at the extension root (this file is ignored by git). See README for details.
+        </div>
+
+        <div class="row buttons">
+            <button id="saveBtn">Save</button>
+            <button id="genQuizBtn">Take quiz to disable blocking</button>
+            <button id="clearKeysBtn">Clear stored keys</button>
+        </div>
+
+        <div id="quizArea" style="display:none; margin-top:20px"></div>
+    </div>
+
+    <script src="options.js"></script>
+</body>
+
+</html>
