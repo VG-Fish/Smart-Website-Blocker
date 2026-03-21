@@ -1,0 +1,21 @@
+{
+    "name": "smart-site-blocker",
+    "version": "0.1.0",
+    "description": "Build helpers for Smart Site Blocker extension",
+    "private": true,
+    "scripts": {
+        "build": "node scripts/build.js",
+        "build:overwrite-root": "node scripts/build.js --overwrite-root",
+        "watch": "node scripts/watch.js",
+        "watch:overwrite-root": "node scripts/watch.js --overwrite-root",
+        "dev": "npm run watch:overwrite-root"
+    },
+    "dependencies": {
+        "esbuild": "^0.27.4"
+    },
+    "devDependencies": {
+        "typescript": "^5.2.0",
+        "ts-node": "^10.9.1",
+        "@types/node": "^20.0.0"
+    }
+}
