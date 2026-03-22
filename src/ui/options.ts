@@ -355,15 +355,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (updated === null) return;
         const val = updated.trim();
 
-        const resp = await browser.runtime.sendMessage({ type: 'validateGoalNemotron', goal: val });
-        if (resp?.result === 'N') {
-            showValidationMsg(resp.reason || 'Goal not educational enough.');
-            return;
-        }
+        if (goalAnalysisLoading) { goalAnalysisLoading.style.display = 'block'; }
+        try {
+            const resp = await browser.runtime.sendMessage({ type: 'validateGoalNemotron', goal: val });
+            if (!resp?.ok) {
+                const v = validateGoal(val);
+                if (!v.ok) { showValidationMsg(v.reason!); return; }
+            } else if (resp.result === 'N') {
+                showValidationMsg(resp.reason || 'Goal not educational enough.');
+                return;
+            }
 
-        s.goals[index] = val;
-        await refreshAndRender(s);
-        createToast('Goal updated');
+            s.goals[index] = val;
+            await refreshAndRender(s);
+            createToast('Goal updated');
+        } finally {
+            if (goalAnalysisLoading) { goalAnalysisLoading.style.display = 'none'; }
+        }
     }
 
     async function deleteGoal(index: number) {

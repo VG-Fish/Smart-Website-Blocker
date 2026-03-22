@@ -264,6 +264,8 @@ async function onPlayAttempt(videoEl: HTMLVideoElement): Promise<boolean> {
     }
 
     videoEl.pause();
+    const wasMuted = videoEl.muted;
+    videoEl.muted = true;
     createOverlay(videoEl);
 
     // Check alignment and handle result
@@ -275,6 +277,7 @@ async function onPlayAttempt(videoEl: HTMLVideoElement): Promise<boolean> {
 
     if (res.aligned) {
         approvedVideoId = videoId;
+        videoEl.muted = wasMuted;
         removeOverlay();
         videoEl.play();
         return true;

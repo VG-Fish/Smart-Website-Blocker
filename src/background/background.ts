@@ -65,42 +65,35 @@ async function fetchTranscript(videoId: string): Promise<string | null> {
     }
 }
 
-async function callRouterClassify(prompt: string, model = 'gpt-4o-mini'): Promise<any> {
-    const key = ENV_VARS.OPENROUTER_API_KEY;
-    const routerUrl = ENV_VARS.OPENROUTER_URL || 'https://openrouter.ai/api/v1/chat/completions';
-    console.log('[API] callRouterClassify → POST', routerUrl, '| model:', model, '| prompt length:', prompt.length);
+async function callCerebras(prompt: string, model = 'llama3.1-8b'): Promise<any> {
+    const key = ENV_VARS.CEREBRAS_API_KEY;
+    const apiUrl = 'https://api.cerebras.ai/v1/chat/completions';
+    console.log('[API] callCerebras → POST', apiUrl, '| model:', model, '| prompt: ', prompt);
     if (!key) {
-        console.warn('[API] callRouterClassify: no API key, aborting');
+        console.warn('[API] callCerebras: no API key, aborting');
         return { error: 'no_api_key' };
     }
 
     try {
-        const resp = await fetch(routerUrl, {
+        const resp = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
             body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }] }),
         });
-        console.log('[API] callRouterClassify ←', resp.status, resp.statusText);
+        console.log('[API] callCerebras ←', resp.status, resp.statusText);
         if (!resp.ok) {
             const detail = await resp.text();
-            console.error('[API] callRouterClassify error body:', detail);
-            return { error: 'router_error', detail };
+            console.error('[API] callCerebras error body:', detail);
+            return { error: 'api_error', detail };
         }
 
         const data = await resp.json();
-        let out = '';
-        if (Array.isArray(data.output)) {
-            out = data.output.map((o: any) => (o.content || '').toString()).join('\n');
-        } else if (data.choices?.[0]) {
-            out = data.choices[0].message?.content || data.choices[0].text || '';
-        } else if (data.result?.output_text) {
-            out = data.result.output_text;
-        }
-        console.log('[API] callRouterClassify response text length:', out.length);
+        const out = data.choices?.[0]?.message?.content || '';
+        console.log('[API] callCerebras response text:', out);
         return { text: out };
     } catch (err: any) {
-        console.error('[API] callRouterClassify exception:', err.message);
-        return { error: 'router_exception', detail: err.message };
+        console.error('[API] callCerebras exception:', err.message);
+        return { error: 'api_exception', detail: err.message };
     }
 }
 
@@ -140,7 +133,7 @@ async function checkAlignment(transcript: string, settings: any, videoUrl?: stri
     const urlLine = videoUrl ? `\n\nVideo URL: ${videoUrl}` : '';
     const prompt = `You are given a user's learning goals (they may have several). Decide whether the following YouTube video (URL and transcript) satisfies at least one of the goals. Consider both the video URL (which may contain the title/topic) and the transcript content. Reply ONLY in JSON with keys: aligned (true/false), score (0-1), matchedGoal (index starting at 0 if matched), reasons (short string). Goals:\n${goalsList}${urlLine}\n\nTranscript:\n\n${transcript}`;
 
-    const routerResp = await callRouterClassify(prompt);
+    const routerResp = await callCerebras(prompt);
     if (routerResp.error) return { ok: false, error: routerResp.error, detail: routerResp.detail };
 
     try {
@@ -175,9 +168,9 @@ function fallbackQuiz(goal: string): any[] {
 async function generateQuiz(settings: any): Promise<any> {
     const goals = extractGoals(settings);
     const goal = goals[0] || 'your stated goal';
-    if (!ENV_VARS.OPENROUTER_API_KEY) return fallbackQuiz(goal);
+    if (!ENV_VARS.CEREBRAS_API_KEY) return fallbackQuiz(goal);
 
-    const modelName = 'nvidia/nemotron-3-super-120b-a12b:free';
+    const modelName = 'llama3.3-70b';
     const goalsList = goals.map((g: string, i: number) => `${i + 1}. ${g}`).join('\n');
     const basePrompt = `You are an assistant that MUST reply ONLY with a JSON array (no surrounding text) of exactly 5 items. Each item must be an object with the keys: question (string), answer_choices (array). For multiple-choice questions supply 3-4 answer_choices objects with choice (string) and isCorrect (true/false). For short-answer questions, return answer_choices as an empty array. Make a mix of easy to hard questions derived from the user's goals. Do NOT include explanations or extra text. Output EXACTLY valid JSON.\nGoals: ${goalsList}\nGenerate 5 questions now as an array.`;
 
@@ -186,7 +179,7 @@ async function generateQuiz(settings: any): Promise<any> {
             ? basePrompt
             : `INVALID OUTPUT DETECTED. Reply ONLY with a valid JSON array using this exact shape: [{"question":"...","answer_choices":[{"choice":"..","isCorrect":true}, ...]}, ...]. Nothing else. Generate 5 items based on the goals: ${goals.join(' | ')}.`;
 
-        const routerResp = await callRouterClassify(prompt, modelName);
+        const routerResp = await callCerebras(prompt, modelName);
         if (routerResp.error) return fallbackQuiz(goal);
 
         try {
@@ -240,9 +233,9 @@ const handlers: Record<string, (msg: any) => Promise<any>> = {
 
     async validateGoalNemotron(msg) {
         const goal = msg.goal || '';
-        const modelName = 'nvidia/nemotron-3-super-120b-a12b:free';
+        const modelName = 'llama3.1-8b';
         const prompt = `Decide whether the following user learning goal is educational and sufficiently descriptive for a learning plan. Reply ONLY with a single capital letter on the first line: Y (yes, it's educational/descriptive) or N (no). On the second line provide a very short reason (max 30 words). No other text.\n\nGoal:\n${goal}`;
-        const routerResp = await callRouterClassify(prompt, modelName);
+        const routerResp = await callCerebras(prompt, modelName);
         if (routerResp.error) return { ok: false, error: routerResp.error };
 
         const text = (routerResp.text || '').trim();
