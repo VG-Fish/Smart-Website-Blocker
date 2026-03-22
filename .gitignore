@@ -10,3 +10,5 @@ dist/
 # SonarCloud — contains org key and optional token; keep local only
 sonar-project.properties
 .scannerwork/
+
+node_modules/

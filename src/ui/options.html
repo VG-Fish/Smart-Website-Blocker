@@ -15,6 +15,11 @@
             <h2 class="section-title">Blocking Control</h2>
             <p id="blockingStatus" class="section-description">Loading blocking state...</p>
             <button id="blockingToggleBtn">Toggle blocking</button>
+            <hr class="section-divider" />
+            <label style="display:flex;align-items:center;gap:8px;margin:0;cursor:pointer">
+                <input type="checkbox" id="blockShortsCheckbox" />
+                Block YouTube Shorts
+            </label>
         </section>
 
         <section class="settings-section">
@@ -39,16 +44,6 @@
             <label for="funLimit">Minutes per day:</label>
             <input id="funLimit" type="number" min="0" />
             <div id="funLimitHint"></div>
-        </section>
-
-        <hr class="section-divider" />
-
-        <section class="settings-section">
-            <h2 class="section-title">YouTube Shorts</h2>
-            <label style="display:flex;align-items:center;gap:8px;margin:0;cursor:pointer">
-                <input type="checkbox" id="blockShortsCheckbox" />
-                Block YouTube Shorts
-            </label>
         </section>
 
         <hr class="section-divider" />

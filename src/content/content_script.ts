@@ -18,7 +18,7 @@ function createOverlay(videoEl: HTMLVideoElement): void {
     font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial">
     <h2 id="ss-title">Checking video alignment with your goal…</h2>
     <p id="ss-body">Please wait — we are fetching the transcript and checking if this video helps your goal.</p>
-    <div id="ss-spinner" style="margin-top:20px">Loading…</div></div>`;
+    <div id="ss-spinner" style="margin-top:20px">Checking Video Content...</div></div>`;
 
     // Attach inside the YouTube player container so only the video is covered.
     const player = document.getElementById('movie_player') || videoEl.parentElement;
@@ -215,6 +215,20 @@ function deactivateShortsBlocker(): void {
     document.getElementById('ss-shorts-overlay')?.remove();
 }
 
+// --- Play interception helpers ---
+
+function updateOverlayMessage(message: string): void {
+    const body = document.getElementById('ss-body');
+    const spinner = document.getElementById('ss-spinner');
+    if (body) body.textContent = message;
+    if (spinner) spinner.remove();
+}
+
+async function checkVideoAlignment(videoId: string): Promise<any> {
+    const localTranscript = await fetchYouTubeTranscript(videoId);
+    return sendMsg({ type: 'fetchTranscriptAndCheck', videoId, transcript: localTranscript, videoTitle: document.title });
+}
+
 // --- Play interception ---
 
 async function onPlayAttempt(videoEl: HTMLVideoElement): Promise<boolean> {
@@ -239,30 +253,34 @@ async function onPlayAttempt(videoEl: HTMLVideoElement): Promise<boolean> {
     if (!videoId) {
         videoEl.pause();
         createOverlay(videoEl);
-        const body = document.getElementById('ss-body');
-        if (body) body.textContent = 'Cannot determine video identity; blocked.';
+        updateOverlayMessage('Cannot determine video identity; blocked.');
         return false;
+    }
+
+    // Skip re-checking if this video was already approved
+    if (approvedVideoId === videoId) {
+        startUsageTimer();
+        return true;
     }
 
     videoEl.pause();
     createOverlay(videoEl);
 
-    // Try to get transcript directly from YouTube's captions
-    const localTranscript = await fetchYouTubeTranscript(videoId);
-    const res = await sendMsg({ type: 'fetchTranscriptAndCheck', videoId, transcript: localTranscript, videoTitle: document.title });
+    // Check alignment and handle result
+    const res = await checkVideoAlignment(videoId);
     if (!res?.ok) {
-        const body = document.getElementById('ss-body');
-        if (body) body.textContent = 'Transcript unavailable — video blocked.';
+        updateOverlayMessage('Transcript unavailable — video blocked.');
         return false;
     }
 
     if (res.aligned) {
+        approvedVideoId = videoId;
         removeOverlay();
+        videoEl.play();
         return true;
     }
 
-    const body = document.getElementById('ss-body');
-    if (body) body.textContent = 'This video is not aligned with your current goal, so playback is blocked.';
+    updateOverlayMessage('This video is not aligned with your current goal, so playback is blocked.');
     return false;
 }
 
@@ -270,6 +288,7 @@ async function onPlayAttempt(videoEl: HTMLVideoElement): Promise<boolean> {
 
 let hookedVideo: HTMLVideoElement | null = null;
 let isPlayAttemptInProgress = false;
+let approvedVideoId: string | null = null;
 
 function hookVideoElement(videoEl: HTMLVideoElement): void {
     if (hookedVideo === videoEl) return;
@@ -303,6 +322,7 @@ globalThis.addEventListener('yt-navigate-finish', () => {
     removeOverlay();
     deactivateShortsBlocker();
     stopUsageTimer();
+    approvedVideoId = null;
     // Re-check for new video element after navigation
     const video = document.querySelector('video');
     if (video && video !== hookedVideo) hookVideoElement(video);
@@ -325,6 +345,46 @@ globalThis.addEventListener('yt-navigate-finish', () => {
 globalThis.addEventListener('popstate', () => removeOverlay());
 
 observeForVideo();
+
+// --- React to settings changes (e.g. blocking re-enabled while video is playing) ---
+
+browser.storage.onChanged.addListener((changes: any) => {
+    const settingsChange = changes[STORAGE_KEYS_SETTINGS];
+    if (!settingsChange) return;
+    const newSettings = settingsChange.newValue;
+    const oldSettings = settingsChange.oldValue;
+    if (!newSettings) return;
+
+    // Blocking was just enabled — re-check the current video
+    if (newSettings.blockingEnabled && !oldSettings?.blockingEnabled) {
+        approvedVideoId = null;
+        const video = document.querySelector('video');
+        if (video && !video.paused) {
+            (async () => {
+                isPlayAttemptInProgress = true;
+                const allowed = await onPlayAttempt(video);
+                if (!allowed) video.pause();
+                isPlayAttemptInProgress = false;
+            })();
+        }
+    }
+
+    // Blocking was just disabled — remove any active overlays
+    if (!newSettings.blockingEnabled && oldSettings?.blockingEnabled) {
+        removeOverlay();
+    }
+
+    // Shorts blocking toggled
+    if (isYouTubeShorts()) {
+        if (newSettings.blockShorts && !oldSettings?.blockShorts) {
+            blockShortsPage();
+        } else if (!newSettings.blockShorts && oldSettings?.blockShorts) {
+            deactivateShortsBlocker();
+        }
+    }
+});
+
+const STORAGE_KEYS_SETTINGS = 'ss_settings';
 
 console.log('[SmartBlocker] content script loaded');
 
