@@ -328,9 +328,29 @@ function updateOverlayMessage(message: string): void {
     if (spinner) spinner.remove();
 }
 
+async function fetchTranscriptFromBackend(videoId: string): Promise<string | null> {
+    try {
+        const resp = await fetch(`https://youtube-transcript-api-one-eta.vercel.app/api/transcript?v=${encodeURIComponent(videoId)}`);
+        if (!resp.ok) return null;
+        const data = await resp.json();
+        if (data.ok && data.transcript) {
+            console.log(`[SmartBlocker] Got transcript from backend (${data.transcript.length} chars)`);
+            return data.transcript;
+        }
+        return null;
+    } catch (err: any) {
+        console.warn('[SmartBlocker] Backend transcript fetch failed:', err.message);
+        return null;
+    }
+}
+
 async function checkVideoAlignment(videoId: string): Promise<any> {
-    const localTranscript = await fetchYouTubeTranscript(videoId);
-    return sendMsg({ type: 'fetchTranscriptAndCheck', videoId, transcript: localTranscript, videoTitle: document.title });
+    let transcript = await fetchYouTubeTranscript(videoId);
+    if (!transcript) {
+        console.log('[SmartBlocker] DOM scraping failed, trying backend fallback');
+        transcript = await fetchTranscriptFromBackend(videoId);
+    }
+    return sendMsg({ type: 'fetchTranscriptAndCheck', videoId, transcript, videoTitle: document.title });
 }
 
 // --- Play interception ---

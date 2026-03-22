@@ -9,7 +9,8 @@
         "activeTab",
         "*://*.youtube.com/*",
         "*://youtu.be/*",
-        "*://api.cerebras.ai/*"
+        "*://api.cerebras.ai/*",
+        "*://youtube-transcript-api-one-eta.vercel.app/*"
     ],
     "background": {
         "scripts": [
