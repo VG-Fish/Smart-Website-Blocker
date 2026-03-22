@@ -249,7 +249,7 @@ async function onPlayAttempt(videoEl: HTMLVideoElement): Promise<boolean> {
 
     // Try to get transcript directly from YouTube's captions
     const localTranscript = await fetchYouTubeTranscript(videoId);
-    const res = await sendMsg({ type: 'fetchTranscriptAndCheck', videoId, transcript: localTranscript });
+    const res = await sendMsg({ type: 'fetchTranscriptAndCheck', videoId, transcript: localTranscript, videoTitle: document.title });
     if (!res?.ok) {
         const body = document.getElementById('ss-body');
         if (body) body.textContent = 'Transcript unavailable — video blocked.';
@@ -258,7 +258,6 @@ async function onPlayAttempt(videoEl: HTMLVideoElement): Promise<boolean> {
 
     if (res.aligned) {
         removeOverlay();
-        videoEl.play().catch(() => { });
         return true;
     }
 
@@ -270,14 +269,18 @@ async function onPlayAttempt(videoEl: HTMLVideoElement): Promise<boolean> {
 // --- Video element hooking ---
 
 let hookedVideo: HTMLVideoElement | null = null;
+let isPlayAttemptInProgress = false;
 
 function hookVideoElement(videoEl: HTMLVideoElement): void {
     if (hookedVideo === videoEl) return;
     hookedVideo = videoEl;
 
     videoEl.addEventListener('play', async () => {
+        if (isPlayAttemptInProgress) return;
+        isPlayAttemptInProgress = true;
         const allowed = await onPlayAttempt(videoEl);
         if (!allowed) videoEl.pause();
+        isPlayAttemptInProgress = false;
     });
 
     videoEl.addEventListener('pause', () => stopUsageTimer());

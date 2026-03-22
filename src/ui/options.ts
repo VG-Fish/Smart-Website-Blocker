@@ -169,6 +169,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const genQuizBtn = document.getElementById('genQuizBtn') as HTMLButtonElement | null;
     const quizArea = document.getElementById('quizArea');
     const blockShortsCheckbox = document.getElementById('blockShortsCheckbox') as HTMLInputElement | null;
+    const blockingStatus = document.getElementById('blockingStatus');
+    const blockingToggleBtn = document.getElementById('blockingToggleBtn') as HTMLButtonElement | null;
 
     let settings = await browser.runtime.sendMessage({ type: 'getSettings' });
 
@@ -182,6 +184,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (funLimit) funLimit.value = settings.funLimitMinutes || 30;
     if (blockShortsCheckbox) blockShortsCheckbox.checked = settings.blockShorts ?? true;
+    if (blockingStatus) blockingStatus.textContent = settings.blockingEnabled ? 'Blocking is currently enabled.' : 'Blocking is currently disabled.';
+    if (blockingToggleBtn) blockingToggleBtn.textContent = settings.blockingEnabled ? 'Disable blocking' : 'Enable blocking';
     renderGoals(settings.goals || []);
 
     // --- Event listeners ---
@@ -236,6 +240,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         settings.blockShorts = blockShortsCheckbox.checked;
         await browser.runtime.sendMessage({ type: 'saveSettings', settings });
         createToast(blockShortsCheckbox.checked ? 'YouTube Shorts blocked' : 'YouTube Shorts allowed');
+    });
+
+    blockingToggleBtn?.addEventListener('click', async () => {
+        settings = await browser.runtime.sendMessage({ type: 'getSettings' });
+        settings.blockingEnabled = !settings.blockingEnabled;
+        await browser.runtime.sendMessage({ type: 'saveSettings', settings });
+        if (blockingStatus) blockingStatus.textContent = settings.blockingEnabled ? 'Blocking is currently enabled.' : 'Blocking is currently disabled.';
+        if (blockingToggleBtn) blockingToggleBtn.textContent = settings.blockingEnabled ? 'Disable blocking' : 'Enable blocking';
+        createToast(settings.blockingEnabled ? 'Blocking enabled' : 'Blocking disabled');
     });
 
     genQuizBtn?.addEventListener('click', async () => {

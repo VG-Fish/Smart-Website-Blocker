@@ -115,26 +115,26 @@ function extractJson(text: string, opener: string, closer: string): string {
     return start >= 0 && end >= 0 ? text.slice(start, end + 1) : text;
 }
 
-    function keywordAlign(goals: string[], text: string): boolean {
-        if (!goals || goals.length === 0 || !text) return false;
-        const haystack = text.toLowerCase();
-        return goals.some(goal => {
-            const words = goal.toLowerCase().split(/\s+/).filter(Boolean);
-            if (words.length === 0) return false;
-            const required = Math.max(1, Math.floor(words.length / 3));
-            const matches = words.reduce((count, w) => {
-                if (w.length <= 2) return count;
-                return haystack.includes(w) ? count + 1 : count;
-            }, 0);
-            return matches >= required;
-        });
-    }
+function keywordAlign(goals: string[], text: string): boolean {
+    if (!goals || goals.length === 0 || !text) return false;
+    const haystack = text.toLowerCase();
+    return goals.some(goal => {
+        const words = goal.toLowerCase().split(/\s+/).filter(Boolean);
+        if (words.length === 0) return false;
+        const required = Math.max(1, Math.floor(words.length / 3));
+        const matches = words.reduce((count, w) => {
+            if (w.length <= 2) return count;
+            return haystack.includes(w) ? count + 1 : count;
+        }, 0);
+        return matches >= required;
+    });
+}
 
-async function checkAlignment(transcript: string, settings: any, videoUrl?: string, videoTitle?: string): Promise<any> {
+async function checkAlignment(transcript: string, settings: any, videoUrl?: string): Promise<any> {
     const goals = extractGoals(settings);
     if (goals.length === 0) return { ok: true, aligned: false, score: 0, reasons: 'no goals set' };
 
-    const backupText = [videoTitle, videoUrl, transcript].filter(Boolean).join(' ');
+    const transcriptText = transcript || '';
 
     const goalsList = goals.map((g: string, i: number) => `${i + 1}. ${g}`).join('\n');
     const urlLine = videoUrl ? `\n\nVideo URL: ${videoUrl}` : '';
@@ -145,17 +145,17 @@ async function checkAlignment(transcript: string, settings: any, videoUrl?: stri
 
     try {
         const parsed = JSON.parse(extractJson(routerResp.text, '{', '}'));
-        if (parsed && parsed.aligned) {
+        if (parsed?.aligned) {
             return { ok: true, aligned: true, score: parsed.score || 0, matchedGoal: parsed.matchedGoal, reasons: parsed.reasons || '' };
         }
-        if (keywordAlign(goals, backupText)) {
-            return { ok: true, aligned: true, score: parsed?.score || 0.45, matchedGoal: parsed?.matchedGoal ?? 0, reasons: 'keyword title/url fallback' };
+        if (keywordAlign(goals, transcriptText)) {
+            return { ok: true, aligned: true, score: parsed?.score || 0.55, matchedGoal: parsed?.matchedGoal ?? 0, reasons: 'fallback transcript keyword match' };
         }
         return { ok: true, aligned: false, score: parsed?.score || 0, matchedGoal: parsed?.matchedGoal, reasons: parsed?.reasons || 'not aligned' };
     } catch (err: any) {
         console.error('[API] checkAlignment JSON parse error:', err.message);
         // Fallback: keyword matching
-        if (keywordAlign(goals, backupText)) {
+        if (keywordAlign(goals, transcriptText)) {
             return { ok: true, aligned: true, score: 0.5, matchedGoal: 0, reasons: 'fallback keyword match' };
         }
         return { ok: true, aligned: false, score: 0.1, reasons: 'no keyword matches' };
@@ -210,14 +210,11 @@ const handlers: Record<string, (msg: any) => Promise<any>> = {
         // Use transcript from content script (YouTube captions) if available, else fall back to jina.ai
         const transcript = msg.transcript || await fetchTranscript(msg.videoId);
         if (!transcript) {
-            const fallbackText = [msg.videoTitle, `https://www.youtube.com/watch?v=${msg.videoId}`].filter(Boolean).join(' ');
-            if (keywordAlign(extractGoals(settings), fallbackText)) {
-                return { ok: true, aligned: true, score: 0.4, matchedGoal: 0, reasons: 'no transcript but title/url matched goal' };
-            }
+            // Without transcript, we should not permissively allow playback. Keep blocking behavior.
             return { ok: false, error: 'no_transcript' };
         }
         const videoUrl = `https://www.youtube.com/watch?v=${msg.videoId}`;
-        return checkAlignment(transcript, settings, videoUrl, msg.videoTitle);
+        return checkAlignment(transcript, settings, videoUrl);
     },
 
     async addUsage(msg) {
