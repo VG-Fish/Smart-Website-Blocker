@@ -14,6 +14,7 @@ const DEFAULT_SETTINGS = {
     goals: [] as string[],
     funLimitMinutes: 30,
     blockingEnabled: true,
+    blockShorts: true,
 };
 
 async function getSettings(): Promise<any> {
@@ -244,16 +245,21 @@ browser.runtime.onMessage.addListener(async (msg: any) => {
     if (handler) return handler(msg);
 });
 
-// Open settings page when the extension icon is clicked
-if (browser.browserAction?.onClicked) {
-    browser.browserAction.onClicked.addListener(() => {
-        browser.runtime.openOptionsPage();
-    });
-} else if (browser.action?.onClicked) {
-    browser.action.onClicked.addListener(() => {
-        browser.runtime.openOptionsPage();
-    });
+// Open settings page in a new tab when the extension toolbar icon is clicked
+function openOptionsInNewTab() {
+    const url = browser.runtime.getURL('dist/options.html');
+    browser.tabs.create({ url });
 }
+
+if (browser.browserAction?.onClicked) {
+    browser.browserAction.onClicked.addListener(openOptionsInNewTab);
+} else if (browser.action?.onClicked) {
+    browser.action.onClicked.addListener(openOptionsInNewTab);
+}
+
+browser.commands.onCommand.addListener((command: string) => {
+    if (command === 'open-settings') openOptionsInNewTab();
+});
 
 console.log('Smart Site Blocker background worker loaded');
 

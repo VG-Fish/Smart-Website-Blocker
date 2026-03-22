@@ -21,7 +21,8 @@
     "browser_action": {
         "default_icon": {
             "48": "icons/icon48.svg"
-        }
+        },
+        "default_title": "Smart Site Blocker Settings"
     },
     "options_ui": {
         "page": "dist/options.html",
@@ -30,6 +31,15 @@
     "icons": {
         "48": "icons/icon48.svg",
         "128": "icons/icon128.svg"
+    },
+    "commands": {
+        "open-settings": {
+            "suggested_key": {
+                "default": "Ctrl+Shift+L",
+                "mac": "MacCtrl+Shift+L"
+            },
+            "description": "Open Smart Site Blocker Settings"
+        }
     },
     "content_scripts": [
         {

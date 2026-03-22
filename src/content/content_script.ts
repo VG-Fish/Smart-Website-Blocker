@@ -9,25 +9,61 @@ function sendMsg(msg: any): Promise<any> {
 
 // --- Overlay UI ---
 
-function createOverlay(): void {
+// Creates an overlay scoped to the YouTube video player, not the full page.
+function createOverlay(videoEl: HTMLVideoElement): void {
     if (document.getElementById('ss-blocker-overlay')) return;
     const overlay = document.createElement('div');
     overlay.id = 'ss-blocker-overlay';
-    Object.assign(overlay.style, {
-        position: 'fixed', left: '0', top: '0', width: '100%', height: '100%',
-        background: 'rgba(0,0,0,0.85)', color: 'white', zIndex: '2147483647',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-    });
-    overlay.innerHTML = `<div style="max-width:900px;padding:20px;text-align:center;
+    overlay.innerHTML = `<div style="max-width:500px;padding:20px;text-align:center;
     font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial">
     <h2 id="ss-title">Checking video alignment with your goal…</h2>
     <p id="ss-body">Please wait — we are fetching the transcript and checking if this video helps your goal.</p>
     <div id="ss-spinner" style="margin-top:20px">Loading…</div></div>`;
-    document.documentElement.appendChild(overlay);
+
+    // Attach inside the YouTube player container so only the video is covered.
+    const player = document.getElementById('movie_player') || videoEl.parentElement;
+    if (player) {
+        Object.assign(overlay.style, {
+            position: 'absolute', left: '0', top: '0', width: '100%', height: '100%',
+            background: 'rgba(0,0,0,0.9)', color: 'white', zIndex: '2147483647',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        });
+        player.appendChild(overlay);
+    } else {
+        // Fallback: position over the video element using fixed coords.
+        const rect = videoEl.getBoundingClientRect();
+        Object.assign(overlay.style, {
+            position: 'fixed', left: `${rect.left}px`, top: `${rect.top}px`,
+            width: `${rect.width}px`, height: `${rect.height}px`,
+            background: 'rgba(0,0,0,0.9)', color: 'white', zIndex: '2147483647',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        });
+        document.documentElement.appendChild(overlay);
+    }
+}
+
+// Shows a small non-blocking banner at the top of the page (for non-video pages).
+function createBanner(title: string, body: string): void {
+    if (document.getElementById('ss-blocker-banner')) return;
+    const banner = document.createElement('div');
+    banner.id = 'ss-blocker-banner';
+    Object.assign(banner.style, {
+        position: 'fixed', top: '0', left: '0', width: '100%',
+        background: '#c0392b', color: 'white', zIndex: '2147483647',
+        padding: '10px 16px', boxSizing: 'border-box',
+        fontFamily: "system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial",
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+    });
+    banner.innerHTML = `<span><strong>${title}</strong> — ${body}</span>
+    <button id="ss-banner-close" style="background:none;border:1px solid white;color:white;cursor:pointer;padding:2px 8px;border-radius:3px;margin-left:16px;font-size:14px">✕</button>`;
+    document.documentElement.appendChild(banner);
+    document.getElementById('ss-banner-close')?.addEventListener('click', () => banner.remove());
 }
 
 function removeOverlay(): void {
     document.getElementById('ss-blocker-overlay')?.remove();
+    document.getElementById('ss-blocker-banner')?.remove();
 }
 
 // --- Video ID extraction ---
@@ -112,10 +148,78 @@ function stopUsageTimer(): void {
     }
 }
 
+// --- Shorts detection & blocking ---
+
+function isYouTubeShorts(): boolean {
+    return globalThis.location.pathname.startsWith('/shorts/');
+}
+
+let shortsBlockerActive = false;
+
+// Document-level capture listener — pauses ANY video that tries to play while Shorts are blocked.
+document.addEventListener('play', (e) => {
+    if (shortsBlockerActive && e.target instanceof HTMLVideoElement) {
+        e.target.pause();
+    }
+}, true);
+
+function blockShortsPage(): void {
+    if (shortsBlockerActive) return;
+    shortsBlockerActive = true;
+
+    // Pause every video currently on the page
+    document.querySelectorAll('video').forEach(v => v.pause());
+
+    // Overlay only the video portion, not the full page
+    if (!document.getElementById('ss-shorts-overlay')) {
+        const videoEl = document.querySelector('video');
+        if (!videoEl) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'ss-shorts-overlay';
+        overlay.innerHTML = `<div style="max-width:500px;padding:20px;text-align:center;
+        font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial">
+        <h2>Shorts Blocked</h2>
+        <p>YouTube Shorts are blocked by your settings.</p></div>`;
+
+        const player = document.getElementById('shorts-player') || videoEl.parentElement;
+        if (player) {
+            (player as HTMLElement).style.position = 'relative';
+            Object.assign(overlay.style, {
+                position: 'absolute', left: '0', top: '0', width: '100%', height: '100%',
+                background: 'rgba(0,0,0,0.92)', color: 'white', zIndex: '2147483647',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            });
+            player.appendChild(overlay);
+        } else {
+            const rect = videoEl.getBoundingClientRect();
+            Object.assign(overlay.style, {
+                position: 'fixed', left: `${rect.left}px`, top: `${rect.top}px`,
+                width: `${rect.width}px`, height: `${rect.height}px`,
+                background: 'rgba(0,0,0,0.92)', color: 'white', zIndex: '2147483647',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            });
+            document.documentElement.appendChild(overlay);
+        }
+    }
+}
+
+function deactivateShortsBlocker(): void {
+    shortsBlockerActive = false;
+    document.getElementById('ss-shorts-overlay')?.remove();
+}
+
 // --- Play interception ---
 
 async function onPlayAttempt(videoEl: HTMLVideoElement): Promise<boolean> {
     const settings = await sendMsg({ type: 'getSettings' });
+
+    // Block Shorts unconditionally when the setting is on
+    if (isYouTubeShorts() && settings?.blockShorts) {
+        blockShortsPage();
+        return false;
+    }
+
     if (!settings?.blockingEnabled) return true;
 
     const { usedSeconds, limitSeconds } = await sendMsg({ type: 'getRemainingFun' });
@@ -128,14 +232,14 @@ async function onPlayAttempt(videoEl: HTMLVideoElement): Promise<boolean> {
     const videoId = getYouTubeVideoId();
     if (!videoId) {
         videoEl.pause();
-        createOverlay();
+        createOverlay(videoEl);
         const body = document.getElementById('ss-body');
         if (body) body.textContent = 'Cannot determine video identity; blocked.';
         return false;
     }
 
     videoEl.pause();
-    createOverlay();
+    createOverlay(videoEl);
 
     // Try to get transcript directly from YouTube's captions
     const localTranscript = await fetchYouTubeTranscript(videoId);
@@ -188,14 +292,19 @@ function observeForVideo(): void {
 // Clean up overlay on SPA navigation
 globalThis.addEventListener('yt-navigate-finish', () => {
     removeOverlay();
+    deactivateShortsBlocker();
     stopUsageTimer();
     // Re-check for new video element after navigation
     const video = document.querySelector('video');
     if (video && video !== hookedVideo) hookVideoElement(video);
-    // Restart usage tracking after SPA navigation
+    // Block Shorts on SPA navigation, then handle normal usage tracking
     (async () => {
         try {
             const settings = await sendMsg({ type: 'getSettings' });
+            if (isYouTubeShorts() && settings?.blockShorts) {
+                blockShortsPage();
+                return;
+            }
             if (!settings?.blockingEnabled) return;
             const { usedSeconds, limitSeconds } = await sendMsg({ type: 'getRemainingFun' });
             if (usedSeconds < limitSeconds) startUsageTimer();
@@ -215,6 +324,13 @@ console.log('[SmartBlocker] content script loaded');
     try {
         const settings = await sendMsg({ type: 'getSettings' });
         console.log('[SmartBlocker] settings:', settings);
+
+        // Block Shorts on initial page load
+        if (isYouTubeShorts() && settings?.blockShorts) {
+            blockShortsPage();
+            return;
+        }
+
         if (!settings?.blockingEnabled) {
             console.log('[SmartBlocker] blocking disabled, not tracking');
             return;
@@ -226,13 +342,7 @@ console.log('[SmartBlocker] content script loaded');
             // Fun time exceeded on youtube.com — block if no video is playing (homepage/browse)
             const videoId = getYouTubeVideoId();
             if (!videoId) {
-                createOverlay();
-                const title = document.getElementById('ss-title');
-                const body = document.getElementById('ss-body');
-                if (title) title.textContent = 'Fun time limit reached';
-                if (body) body.textContent = 'Your daily fun time limit has been exceeded. YouTube browsing is blocked.';
-                const spinner = document.getElementById('ss-spinner');
-                if (spinner) spinner.style.display = 'none';
+                createBanner('Fun time limit reached', 'Your daily fun time limit has been exceeded. Video playback is restricted.');
             }
         } else {
             // Track browsing time on YouTube (even without video)

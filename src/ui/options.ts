@@ -66,6 +66,10 @@ async function submitQuizAnswers(questions: any[], answers: any[]) {
             correct++;
         }
     }
+
+    const quizArea = document.getElementById('quizArea');
+    if (quizArea) { quizArea.style.display = 'none'; quizArea.innerHTML = ''; }
+
     const score = Math.round((correct / questions.length) * 100);
     if (score >= 60) {
         const s = await browser.runtime.sendMessage({ type: 'getSettings' });
@@ -163,6 +167,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const funLimitHint = document.getElementById('funLimitHint');
     const genQuizBtn = document.getElementById('genQuizBtn') as HTMLButtonElement | null;
     const quizArea = document.getElementById('quizArea');
+    const blockShortsCheckbox = document.getElementById('blockShortsCheckbox') as HTMLInputElement | null;
 
     let settings = await browser.runtime.sendMessage({ type: 'getSettings' });
 
@@ -175,6 +180,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (funLimit) funLimit.value = settings.funLimitMinutes || 30;
+    if (blockShortsCheckbox) blockShortsCheckbox.checked = settings.blockShorts ?? true;
     renderGoals(settings.goals || []);
 
     // --- Event listeners ---
@@ -224,6 +230,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     addGoalBtn?.addEventListener('click', () => handleAddGoal());
 
+    blockShortsCheckbox?.addEventListener('change', async () => {
+        settings = await browser.runtime.sendMessage({ type: 'getSettings' });
+        settings.blockShorts = blockShortsCheckbox.checked;
+        await browser.runtime.sendMessage({ type: 'saveSettings', settings });
+        createToast(blockShortsCheckbox.checked ? 'YouTube Shorts blocked' : 'YouTube Shorts allowed');
+    });
+
     genQuizBtn?.addEventListener('click', async () => {
         if (!quizArea) return;
         quizArea.style.display = 'block';
@@ -242,22 +255,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         const val = (newGoalInput?.value || '').trim();
         if (!val) return;
 
-        const resp = await browser.runtime.sendMessage({ type: 'validateGoalNemotron', goal: val });
-        if (!resp?.ok) {
-            const v = validateGoal(val);
-            if (!v.ok) { showValidationMsg(v.reason!); return; }
-        } else if (resp.result === 'N') {
-            showValidationMsg(resp.reason || 'Goal does not appear sufficiently educational or descriptive.');
-            return;
-        }
+        if (addGoalBtn) { addGoalBtn.disabled = true; addGoalBtn.textContent = 'Validating…'; }
 
-        settings = await browser.runtime.sendMessage({ type: 'getSettings' });
-        settings.goals = settings.goals || [];
-        settings.goals.push(val);
-        await browser.runtime.sendMessage({ type: 'saveSettings', settings });
-        renderGoals(settings.goals);
-        if (newGoalInput) newGoalInput.value = '';
-        createToast('Goal added');
+        try {
+            const resp = await browser.runtime.sendMessage({ type: 'validateGoalNemotron', goal: val });
+            if (!resp?.ok) {
+                const v = validateGoal(val);
+                if (!v.ok) { showValidationMsg(v.reason!); return; }
+            } else if (resp.result === 'N') {
+                showValidationMsg(resp.reason || 'Goal does not appear sufficiently educational or descriptive.');
+                return;
+            }
+
+            settings = await browser.runtime.sendMessage({ type: 'getSettings' });
+            settings.goals = settings.goals || [];
+            settings.goals.push(val);
+            await browser.runtime.sendMessage({ type: 'saveSettings', settings });
+            renderGoals(settings.goals);
+            if (newGoalInput) newGoalInput.value = '';
+            createToast('Goal added');
+        } finally {
+            if (addGoalBtn) { addGoalBtn.disabled = false; addGoalBtn.textContent = 'Add Goal'; }
+        }
     }
 
     function renderGoals(goals: string[]) {

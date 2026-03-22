@@ -23,6 +23,8 @@
             <div id="goalsList"></div>
         </section>
 
+        <hr class="section-divider" />
+
         <section class="settings-section">
             <h2 class="section-title">Fun Time Limit</h2>
             <label for="funLimit">Minutes per day:</label>
@@ -30,16 +32,31 @@
             <div id="funLimitHint"></div>
         </section>
 
+        <hr class="section-divider" />
+
+        <section class="settings-section">
+            <h2 class="section-title">YouTube Shorts</h2>
+            <label style="display:flex;align-items:center;gap:8px;margin:0;cursor:pointer">
+                <input type="checkbox" id="blockShortsCheckbox" />
+                Block YouTube Shorts
+            </label>
+        </section>
+
+        <hr class="section-divider" />
+
+        <section class="settings-section">
+            <h2 class="section-title">Knowledge Quiz</h2>
+            <p class="section-description">Test your understanding of your learning goals. Score 60% or higher to temporarily disable blocking.</p>
+            <button id="genQuizBtn">Take quiz</button>
+            <div id="quizArea" style="display:none; margin-top:24px"></div>
+        </section>
+
+        <hr class="section-divider" />
+
         <div class="api-note">
             To avoid storing sensitive API keys in extension storage, place your API keys in a local <code>.env</code>
             file at the extension root (this file is ignored by git). See README for details.
         </div>
-
-        <div class="row buttons" style="justify-content: center">
-            <button id="genQuizBtn">Take quiz</button>
-        </div>
-
-        <div id="quizArea" style="display:none; margin-top:24px"></div>
     </div>
 
     <script src="options.js"></script>

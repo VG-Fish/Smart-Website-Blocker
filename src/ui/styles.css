@@ -153,6 +153,19 @@ input[type="number"] {
     border: 1px solid #ffcdd2
 }
 
+.section-divider {
+    border: none;
+    border-top: 1px solid #e0e0e0;
+    margin: 8px 0
+}
+
+.section-description {
+    font-size: 0.9em;
+    color: #666;
+    margin: 0 0 14px 0;
+    line-height: 1.5
+}
+
 .api-note {
     font-size: 0.88em;
     color: #666;
