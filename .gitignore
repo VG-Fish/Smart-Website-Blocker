@@ -1,7 +1,12 @@
 .env
+.env.*
 .DS_Store
 .vscode/
 *.log
 
 # Ignore generated build output
 dist/
+
+# SonarCloud — contains org key and optional token; keep local only
+sonar-project.properties
+.scannerwork/

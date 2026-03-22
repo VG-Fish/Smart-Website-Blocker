@@ -1,7 +1,7 @@
 body {
     font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Arial;
     margin: 0;
-    padding: 24px 16px;
+    padding: 32px 20px;
     color: #111
 }
 
@@ -11,17 +11,17 @@ body {
 }
 
 h1 {
-    margin: 0 0 24px 0;
+    margin: 0 0 32px 0;
     font-size: 1.5em
 }
 
 h2 {
-    margin: 8px 0
+    margin: 0 0 16px 0
 }
 
 label {
     display: block;
-    margin-bottom: 6px;
+    margin-bottom: 10px;
     font-size: 0.95em;
     color: #333
 }
@@ -30,12 +30,12 @@ label {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin: 10px 0
+    margin: 14px 0
 }
 
 .buttons {
     gap: 8px;
-    margin-top: 16px
+    margin-top: 20px
 }
 
 button {
@@ -55,7 +55,7 @@ input[type="password"],
 input[type="number"] {
     width: 100%;
     padding: 9px 10px;
-    margin: 4px 0;
+    margin: 6px 0;
     box-sizing: border-box;
     border: 1px solid #ccc;
     border-radius: 6px;
@@ -66,12 +66,12 @@ input[type="number"] {
     background: #fafafa;
     border: 1px solid #e0e0e0;
     border-radius: 10px;
-    padding: 18px 20px;
-    margin-bottom: 16px
+    padding: 24px;
+    margin-bottom: 24px
 }
 
 .section-title {
-    margin: 0 0 14px 0;
+    margin: 0 0 18px 0;
     font-size: 0.95em;
     font-weight: 600;
     color: #555;
@@ -83,27 +83,81 @@ input[type="number"] {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin: 16px 0 10px;
-    color: #888;
+    margin: 24px 0 14px;
+    color: #777;
     font-size: 0.8em;
-    font-weight: 600;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.05em
+    letter-spacing: 0.06em
 }
 
 .goals-divider::before,
 .goals-divider::after {
     content: '';
     flex: 1;
-    height: 1px;
-    background: #ddd
+    height: 2px;
+    background: linear-gradient(to right, #e0e0e0, #c8c8c8);
+    border-radius: 1px
+}
+
+.goals-divider::before {
+    background: linear-gradient(to right, transparent, #c8c8c8)
+}
+
+.goals-divider::after {
+    background: linear-gradient(to left, transparent, #c8c8c8)
+}
+
+#goalsList {
+    background: #fff;
+    border: 1px solid #e4e4e4;
+    border-radius: 8px;
+    overflow: hidden
+}
+
+.goal-row {
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: 1px solid #f0f0f0
+}
+
+.goal-row:last-child {
+    border-bottom: none
+}
+
+.no-goals-msg {
+    padding: 16px 12px;
+    color: #999;
+    font-size: 0.9em;
+    text-align: center
+}
+
+.fun-limit-hint {
+    display: none;
+    margin-top: 10px;
+    font-size: 0.88em;
+    padding: 7px 11px;
+    border-radius: 6px
+}
+
+.fun-limit-hint.success {
+    color: #2e7d32;
+    background: rgba(46, 125, 50, 0.07);
+    border: 1px solid rgba(46, 125, 50, 0.25)
+}
+
+.fun-limit-hint.error {
+    color: #b00020;
+    background: rgba(176, 0, 32, 0.07);
+    border: 1px solid rgba(176, 0, 32, 0.25)
 }
 
 .api-note {
     font-size: 0.88em;
     color: #666;
-    margin-bottom: 16px;
-    padding: 10px 12px;
+    margin-bottom: 24px;
+    padding: 12px 14px;
     background: #f5f5f5;
     border-radius: 6px;
     line-height: 1.5

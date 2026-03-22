@@ -49,12 +49,17 @@ async function getUsageForDomainToday(domain: string): Promise<number> {
 }
 
 async function fetchTranscript(videoId: string): Promise<string | null> {
+    const url = `https://r.jina.ai/http://youtube.com/watch?v=${videoId}`;
+    console.log('[API] fetchTranscript →', url);
     try {
-        const resp = await fetch(`https://r.jina.ai/http://youtube.com/watch?v=${videoId}`);
+        const resp = await fetch(url);
+        console.log('[API] fetchTranscript ←', resp.status, resp.statusText);
         if (!resp.ok) throw new Error('r.jina.ai fetch failed');
-        return await resp.text();
+        const text = await resp.text();
+        console.log('[API] fetchTranscript body length:', text.length);
+        return text;
     } catch (err) {
-        console.warn('Transcript fetch failed', err);
+        console.warn('[API] fetchTranscript error:', err);
         return null;
     }
 }
@@ -62,15 +67,25 @@ async function fetchTranscript(videoId: string): Promise<string | null> {
 async function callRouterClassify(prompt: string, model?: string): Promise<any> {
     const key = ENV_VARS.OPENROUTER_API_KEY;
     const routerUrl = ENV_VARS.OPENROUTER_URL || 'https://api.openrouter.ai/v1/responses';
-    if (!key) return { error: 'no_api_key' };
+    const resolvedModel = model || 'gpt-4o-mini';
+    console.log('[API] callRouterClassify → POST', routerUrl, '| model:', resolvedModel, '| prompt length:', prompt.length);
+    if (!key) {
+        console.warn('[API] callRouterClassify: no API key, aborting');
+        return { error: 'no_api_key' };
+    }
 
     try {
         const resp = await fetch(routerUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-            body: JSON.stringify({ model: model || 'gpt-4o-mini', input: prompt }),
+            body: JSON.stringify({ model: resolvedModel, input: prompt }),
         });
-        if (!resp.ok) return { error: 'router_error', detail: await resp.text() };
+        console.log('[API] callRouterClassify ←', resp.status, resp.statusText);
+        if (!resp.ok) {
+            const detail = await resp.text();
+            console.error('[API] callRouterClassify error body:', detail);
+            return { error: 'router_error', detail };
+        }
 
         const data = await resp.json();
         let out = '';
@@ -81,8 +96,10 @@ async function callRouterClassify(prompt: string, model?: string): Promise<any> 
         } else if (data.result?.output_text) {
             out = data.result.output_text;
         }
+        console.log('[API] callRouterClassify response text length:', out.length);
         return { text: out };
     } catch (err: any) {
+        console.error('[API] callRouterClassify exception:', err.message);
         return { error: 'router_exception', detail: err.message };
     }
 }

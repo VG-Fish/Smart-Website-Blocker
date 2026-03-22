@@ -1,14 +1,50 @@
 #!/usr/bin/env node
-// Build runner — TypeScript check + esbuild bundle + static copy
-// Usage: node scripts/build.js [--overwrite-root] [--target=chrome|firefox]
+// Build runner — TypeScript check + esbuild bundle + static copy + SonarCloud scan
+// Usage: node scripts/build.js [--overwrite-root] [--target=chrome|firefox] [--skip-sonar]
 
 const esbuild = require('esbuild');
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const path = require('path');
 const child_process = require('child_process');
 const { projectRoot, distRoot, builds, esbuildOptions, copyStatic, copyToRoot } = require('./shared');
 
-async function buildAll(overwriteRoot, target) {
+/** Read a single key from a .env file (no third-party dep needed). */
+function readEnvKey(envPath, key) {
+    try {
+        const lines = fsSync.readFileSync(envPath, 'utf8').split('\n');
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('#') || !trimmed.includes('=')) continue;
+            const [k, ...rest] = trimmed.split('=');
+            if (k.trim() === key) return rest.join('=').trim();
+        }
+    } catch { /* .env absent — skip */ }
+    return null;
+}
+
+async function runSonar() {
+    // Prefer SONAR_TOKEN already in environment; fall back to .env file
+    const sonarToken = process.env.SONAR_TOKEN
+        || readEnvKey(path.join(projectRoot, '.env'), 'SONAR_TOKEN');
+    const env = { ...process.env };
+    if (sonarToken) env.SONAR_TOKEN = sonarToken;
+    console.log('Running SonarCloud scan…');
+    try {
+        child_process.execSync(
+            'npx @sonar/scan' +
+            ' -Dsonar.nodejs.executable=' + process.execPath +
+            ' -Dsonar.javascript.node.maxspace=4096',
+            { stdio: 'inherit', cwd: projectRoot, env }
+        );
+        console.log('SonarCloud scan complete.');
+    } catch (err) {
+        console.error('SonarCloud scan failed:', err?.message);
+        process.exit(err.status || 1);
+    }
+}
+
+async function buildAll(overwriteRoot, target, skipSonar) {
     // TypeScript check first
     try {
         console.log('Running TypeScript compiler…');
@@ -51,14 +87,17 @@ async function buildAll(overwriteRoot, target) {
             try { await copyToRoot(path.join(distRoot, ext)); } catch { /* skip */ }
         }
     }
+
+    if (!skipSonar) await runSonar();
 }
 
 async function main() {
     const args = process.argv.slice(2);
     const overwriteRoot = args.includes('--overwrite-root');
+    const skipSonar = args.includes('--skip-sonar');
     const targetArg = args.find(a => a.startsWith('--target='));
     const target = targetArg ? targetArg.split('=')[1] : 'chrome';
-    await buildAll(overwriteRoot, target);
+    await buildAll(overwriteRoot, target, skipSonar);
     console.log('\nBuild complete.');
 }
 

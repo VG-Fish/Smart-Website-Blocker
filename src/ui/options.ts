@@ -26,18 +26,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // --- Event listeners ---
 
+    funLimit?.addEventListener('input', () => {
+        if (funLimitHint) funLimitHint.style.display = 'none';
+    });
+
     funLimit?.addEventListener('change', async () => {
         const val = Number(funLimit.value);
         const valid = funLimit.value.trim() !== '' && Number.isInteger(val) && val >= 0;
         if (funLimitHint) {
+            funLimitHint.className = `fun-limit-hint ${valid ? 'success' : 'error'}`;
             funLimitHint.style.display = 'block';
-            funLimitHint.style.color = valid ? '#2e7d32' : '#b00020';
-            funLimitHint.textContent = valid ? `✓ ${val} minute${val === 1 ? '' : 's'} per day` : 'Enter a whole number ≥ 0';
+            funLimitHint.textContent = valid ? `✓ ${val} minute${val === 1 ? '' : 's'} per day saved` : 'Enter a whole number ≥ 0';
         }
         if (valid) {
             settings.funLimitMinutes = val;
             await browser.runtime.sendMessage({ type: 'saveSettings', settings });
-            createToast('Fun time limit saved');
         }
     });
 
@@ -99,13 +102,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!goalsList) return;
         goalsList.innerHTML = '';
         if (!goals.length) {
-            goalsList.innerHTML = '<div style="color:#666">No goals yet. Add a specific goal above.</div>';
+            const empty = document.createElement('div');
+            empty.className = 'no-goals-msg';
+            empty.textContent = 'No goals yet. Add a specific goal above.';
+            goalsList.appendChild(empty);
             return;
         }
         goals.forEach((g, i) => {
             const row = document.createElement('div');
             row.className = 'goal-row';
-            Object.assign(row.style, { display: 'flex', alignItems: 'center', marginBottom: '6px' });
 
             const text = document.createElement('div');
             text.style.flex = '1';

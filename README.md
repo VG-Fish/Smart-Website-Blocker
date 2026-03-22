@@ -136,3 +136,43 @@ Notes
 - If you want, I can add `manifest.dev.json` or update `scripts/watch.js` to support `--target` as well.
 
 Generated on: 2026-03-21
+
+## Code quality — SonarCloud
+
+This project uses [SonarCloud](https://sonarcloud.io) for static analysis (bugs, code smells, security hotspots).
+
+### Setup (one-time, local only)
+
+`sonar-project.properties` is gitignored so each developer keeps their own local copy.
+
+1. Copy the template and fill in your values:
+
+```bash
+cp sonar-project.properties.example sonar-project.properties   # if an example exists, otherwise create from scratch
+```
+
+Minimum required content:
+
+```properties
+sonar.projectKey=vg-fish_smart-website-blocker
+sonar.organization=vg-fish
+sonar.projectName=Smart Website Blocker
+sonar.projectVersion=0.1.0
+sonar.sources=src
+sonar.exclusions=node_modules/**,dist/**
+sonar.typescript.tsconfigPath=tsconfig.json
+```
+
+2. Export your SonarCloud token (never hardcode it in the file):
+
+```bash
+export SONAR_TOKEN=your_token_here
+```
+
+### Running the scan
+
+```bash
+npm run sonar
+```
+
+Results are published to your SonarCloud project dashboard at sonarcloud.io.
