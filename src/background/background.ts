@@ -186,11 +186,13 @@ const handlers: Record<string, (msg: any) => Promise<any>> = {
     async fetchTranscriptAndCheck(msg) {
         const settings = await getSettings();
         const transcript = msg.transcript;
-        if (!transcript) {
-            // Without transcript, we should not permissively allow playback. Keep blocking behavior.
-            return { ok: false, error: 'no_transcript' };
-        }
         const videoUrl = `https://www.youtube.com/watch?v=${msg.videoId}`;
+        const videoTitle = msg.videoTitle || '';
+        if (!transcript) {
+            // No transcript available — check alignment using title/URL only
+            console.log('[SmartBlocker] No transcript, falling back to title/URL alignment');
+            return checkAlignment(videoTitle, settings, videoUrl);
+        }
         return checkAlignment(transcript, settings, videoUrl);
     },
 

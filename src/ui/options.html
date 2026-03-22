@@ -42,8 +42,21 @@
         <section class="settings-section">
             <h2 class="section-title">Fun Time Limit</h2>
             <div id="funUsageDisplay" class="fun-usage-display">Loading usage…</div>
-            <label for="funLimit">Minutes per day:</label>
-            <input id="funLimit" type="number" min="0" />
+            <label for="funLimitHours">Limit per day (press Enter to save):</label>
+            <div class="fun-limit-inputs">
+                <div class="fun-limit-field">
+                    <input id="funLimitHours" type="number" min="0" max="24" step="1" value="0" />
+                    <span class="fun-limit-label">hours</span>
+                </div>
+                <div class="fun-limit-field">
+                    <input id="funLimitMinutes" type="number" min="0" max="59" step="1" value="30" />
+                    <span class="fun-limit-label">min</span>
+                </div>
+                <div class="fun-limit-field">
+                    <input id="funLimitSeconds" type="number" min="0" max="59" step="1" value="0" />
+                    <span class="fun-limit-label">sec</span>
+                </div>
+            </div>
             <div id="funLimitHint"></div>
         </section>
 

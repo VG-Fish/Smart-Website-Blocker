@@ -173,7 +173,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const addGoalBtn = document.getElementById('addGoalBtn') as HTMLButtonElement | null;
     const goalsList = document.getElementById('goalsList');
     const goalAnalysisLoading = document.getElementById('goalAnalysisLoading');
-    const funLimit = document.getElementById('funLimit') as HTMLInputElement | null;
+    const funLimitHours = document.getElementById('funLimitHours') as HTMLInputElement | null;
+    const funLimitMinutes = document.getElementById('funLimitMinutes') as HTMLInputElement | null;
+    const funLimitSeconds = document.getElementById('funLimitSeconds') as HTMLInputElement | null;
     const funLimitHint = document.getElementById('funLimitHint');
     const genQuizBtn = document.getElementById('genQuizBtn') as HTMLButtonElement | null;
     const quizArea = document.getElementById('quizArea');
@@ -192,7 +194,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         await browser.runtime.sendMessage({ type: 'saveSettings', settings });
     }
 
-    if (funLimit) funLimit.value = settings.funLimitMinutes || 30;
+    // Display fun limit split into h / m / s
+    {
+        const totalMin = settings.funLimitMinutes || 30;
+        const totalSec = Math.round(totalMin * 60);
+        const h = Math.floor(totalSec / 3600);
+        const m = Math.floor((totalSec % 3600) / 60);
+        const s = totalSec % 60;
+        if (funLimitHours) funLimitHours.value = String(h);
+        if (funLimitMinutes) funLimitMinutes.value = String(m);
+        if (funLimitSeconds) funLimitSeconds.value = String(s);
+    }
     if (blockShortsCheckbox) blockShortsCheckbox.checked = settings.blockShorts ?? true;
     if (blockingStatus) blockingStatus.textContent = settings.blockingEnabled ? 'Blocking is currently enabled.' : 'Blocking is currently disabled.';
     if (blockingToggleBtn) blockingToggleBtn.textContent = settings.blockingEnabled ? 'Disable blocking' : 'Enable blocking';
@@ -226,45 +238,72 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // --- Event listeners ---
 
-    funLimit?.addEventListener('input', () => {
-        if (funLimitHint) funLimitHint.style.display = 'none';
-    });
+    function showFunLimitError(msg: string) {
+        if (!funLimitHint) return;
+        funLimitHint.className = 'fun-limit-hint error';
+        funLimitHint.style.display = 'block';
+        funLimitHint.style.opacity = '1';
+        funLimitHint.style.transition = '';
+        funLimitHint.textContent = msg;
+        setTimeout(() => {
+            funLimitHint.style.transition = 'opacity 0.35s ease';
+            funLimitHint.style.opacity = '0';
+            setTimeout(() => { funLimitHint.style.display = 'none'; }, 400);
+        }, 3000);
+    }
 
-    funLimit?.addEventListener('change', async () => {
-        const val = Number(funLimit.value);
-        const valid = funLimit.value.trim() !== '' && Number.isInteger(val) && val >= 0;
-        if (!valid) {
-            if (funLimitHint) {
-                funLimitHint.className = 'fun-limit-hint error';
-                funLimitHint.style.display = 'block';
-                funLimitHint.style.opacity = '1';
-                funLimitHint.style.transition = '';
-                funLimitHint.textContent = 'Enter a whole number >= 0';
-                setTimeout(() => {
-                    funLimitHint.style.transition = 'opacity 0.35s ease';
-                    funLimitHint.style.opacity = '0';
-                    setTimeout(() => { funLimitHint.style.display = 'none'; }, 400);
-                }, 3000);
-            }
-            return;
-        }
+    function clampInput(input: HTMLInputElement | null, min: number, max: number) {
+        if (!input) return;
+        input.addEventListener('input', () => {
+            if (funLimitHint) funLimitHint.style.display = 'none';
+            const v = Number(input.value);
+            if (v < min) input.value = String(min);
+            if (v > max) input.value = String(max);
+        });
+    }
+
+    clampInput(funLimitHours, 0, 24);
+    clampInput(funLimitMinutes, 0, 59);
+    clampInput(funLimitSeconds, 0, 59);
+
+    async function saveFunLimit() {
+        const h = Math.floor(Number(funLimitHours?.value) || 0);
+        const m = Math.floor(Number(funLimitMinutes?.value) || 0);
+        const s = Math.floor(Number(funLimitSeconds?.value) || 0);
+
+        if (h < 0 || m < 0 || s < 0) { showFunLimitError('Values cannot be negative.'); return; }
+
+        const totalSec = h * 3600 + m * 60 + s;
+        if (totalSec > 24 * 3600) { showFunLimitError('Total cannot exceed 24 hours.'); return; }
+
+        const minutes = totalSec / 60;
 
         // Once-per-day restriction (bypassed in debug builds)
         const today = new Date().toISOString().slice(0, 10);
         settings = await browser.runtime.sendMessage({ type: 'getSettings' });
         if (!__DEBUG__ && settings.lastFunLimitChangeDate === today) {
             createToast('You can only change the fun time limit once per day.', 'error');
-            funLimit.value = settings.funLimitMinutes ?? 30;
+            // Restore saved values
+            const savedSec = Math.round((settings.funLimitMinutes ?? 30) * 60);
+            if (funLimitHours) funLimitHours.value = String(Math.floor(savedSec / 3600));
+            if (funLimitMinutes) funLimitMinutes.value = String(Math.floor((savedSec % 3600) / 60));
+            if (funLimitSeconds) funLimitSeconds.value = String(savedSec % 60);
             return;
         }
 
-        settings.funLimitMinutes = val;
+        settings.funLimitMinutes = minutes;
         settings.lastFunLimitChangeDate = today;
         await browser.runtime.sendMessage({ type: 'saveSettings', settings });
-        const plural = val === 1 ? '' : 's';
-        createToast(`Fun time limit set to ${val} minute${plural} per day`);
+        createToast(`Fun time limit set to ${formatTime(totalSec)} per day`);
         updateFunUsage();
-    });
+    }
+
+    const funLimitInputs = [funLimitHours, funLimitMinutes, funLimitSeconds];
+    for (const input of funLimitInputs) {
+        input?.addEventListener('keydown', (ev) => {
+            if (ev.key === 'Enter') { ev.preventDefault(); saveFunLimit(); }
+        });
+    }
 
     newGoalInput?.addEventListener('keydown', async (ev) => {
         if (ev.key === 'Enter') { ev.preventDefault(); await handleAddGoal(); }

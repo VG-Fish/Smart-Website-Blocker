@@ -194,6 +194,34 @@ input[type="number"] {
     background: #e53935
 }
 
+.fun-limit-inputs {
+    display: flex;
+    gap: 10px;
+    margin: 6px 0
+}
+
+.fun-limit-field {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1
+}
+
+.fun-limit-field input {
+    text-align: center;
+    width: 100%;
+    font-size: 1.1em;
+    padding: 8px 4px
+}
+
+.fun-limit-label {
+    font-size: 0.78em;
+    color: #777;
+    margin-top: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em
+}
+
 .fun-limit-hint {
     display: none;
     margin-top: 10px;

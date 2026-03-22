@@ -82,6 +82,9 @@ function getYouTubeVideoId(): string | null {
 
 // --- YouTube transcript extraction (DOM-based) ---
 
+// Track whether we already tried (and failed) to open the transcript for this video
+let transcriptAttemptedForVideo: string | null = null;
+
 // Waits for a CSS selector to appear in the DOM, using a MutationObserver.
 function waitForSelector(selector: string, timeout: number): Promise<boolean> {
     if (document.querySelector(selector)) return Promise.resolve(true);
@@ -97,21 +100,46 @@ function waitForSelector(selector: string, timeout: number): Promise<boolean> {
     });
 }
 
+// Clicks the "...more" button in the video description to expand it, revealing the transcript button.
+async function expandDescription(): Promise<void> {
+    const moreElement = Array.from(document.querySelectorAll('tp-yt-paper-button, button, span')).find(
+        (el) => el.textContent?.trim() === '...more' && el instanceof HTMLElement
+    ) as HTMLElement | undefined;
+    if (moreElement) {
+        moreElement.click();
+        console.log('[SmartBlocker] Clicked "...more" to expand description');
+        // Wait for the description to expand and transcript button to appear
+        await waitForSelector('[aria-label="Show transcript"]', 3000);
+    }
+}
+
 // Attempts to open the YouTube transcript panel so that segment elements are in the DOM.
 async function openTranscriptPanel(): Promise<boolean> {
-    const SEG_SELECTOR = 'ytd-transcript-segment-renderer';
-    if (document.querySelector(SEG_SELECTOR)) return true;
+    const SEG_SELECTOR = '#segments-container';
+    const SEG_RENDERER = 'ytd-transcript-segment-renderer';
+    if (document.querySelector(SEG_SELECTOR)?.hasChildNodes() || document.querySelector(SEG_RENDERER)) return true;
 
-    // Method 1: Click the "Show transcript" button in the video description section.
+    // Step 1: Expand the description to reveal the transcript button.
+    await expandDescription();
+
+    // Method 1: Click the "Show transcript" button by aria-label.
+    const transcriptBtn = document.querySelector('[aria-label="Show transcript"]') as HTMLElement | null;
+    if (transcriptBtn) {
+        transcriptBtn.click();
+        console.log('[SmartBlocker] Clicked "Show transcript" (aria-label)');
+        if (await waitForSelector(SEG_SELECTOR, 2000) || await waitForSelector(SEG_RENDERER, 2000)) return true;
+    }
+
+    // Method 2: Click the transcript button in the description section.
     const descBtn = document.querySelector(
         'ytd-video-description-transcript-section-renderer button'
     ) as HTMLElement | null;
     if (descBtn) {
         descBtn.click();
-        if (await waitForSelector(SEG_SELECTOR, 4000)) return true;
+        if (await waitForSelector(SEG_SELECTOR, 2000) || await waitForSelector(SEG_RENDERER, 2000)) return true;
     }
 
-    // Method 2: Scan all visible buttons for one whose label contains "transcript".
+    // Method 3: Scan all visible buttons for one whose label contains "transcript".
     const allButtons = Array.from(document.querySelectorAll(
         'button, ytd-button-renderer, tp-yt-paper-button'
     ));
@@ -119,30 +147,54 @@ async function openTranscriptPanel(): Promise<boolean> {
         const label = (btn.textContent || '').toLowerCase();
         if (label.includes('transcript') && !label.includes('search')) {
             (btn as HTMLElement).click();
-            if (await waitForSelector(SEG_SELECTOR, 4000)) return true;
+            if (await waitForSelector(SEG_SELECTOR, 2000) || await waitForSelector(SEG_RENDERER, 2000)) return true;
         }
     }
 
     return false;
 }
 
+// Cleans transcript text from a container element, stripping timestamps and extra whitespace.
+function cleanTranscriptText(container: Element): string {
+    return container.textContent
+        ?.trim()
+        .replace(/[\n\r0-9:]+/g, '')
+        .replace(/\s+/g, ' ')
+        .trim() || '';
+}
+
 // Extracts transcript text from the DOM transcript panel segments.
-async function fetchYouTubeTranscript(_videoId: string): Promise<string | null> {
+async function fetchYouTubeTranscript(videoId: string): Promise<string | null> {
     try {
+        // Skip DOM clicking if we already failed for this video
+        if (transcriptAttemptedForVideo === videoId) {
+            console.log('[SmartBlocker] Transcript already attempted for this video, skipping');
+            return null;
+        }
+        transcriptAttemptedForVideo = videoId;
+
         const panelOpened = await openTranscriptPanel();
         if (!panelOpened) {
             console.warn('[SmartBlocker] Could not open transcript panel');
             return null;
         }
 
-        // Collect text from every ytd-transcript-segment-renderer
+        // Primary: read from #segments-container (bulk extraction, strips timestamps)
+        const container = document.getElementById('segments-container');
+        if (container?.textContent?.trim()) {
+            const text = cleanTranscriptText(container);
+            if (text) {
+                console.log(`[SmartBlocker] Extracted transcript from segments-container (${text.length} chars)`);
+                return text;
+            }
+        }
+
+        // Fallback: collect text from individual ytd-transcript-segment-renderer elements
         const segments = document.querySelectorAll('ytd-transcript-segment-renderer');
         if (segments.length === 0) return null;
 
         const lines: string[] = [];
         segments.forEach(seg => {
-            // The segment text lives in a yt-formatted-string with class "segment-text"
-            // but fall back to any yt-formatted-string if that class isn't found.
             const textEl = seg.querySelector('yt-formatted-string.segment-text')
                 || seg.querySelector('yt-formatted-string');
             const text = textEl?.textContent?.trim();
@@ -162,18 +214,25 @@ async function fetchYouTubeTranscript(_videoId: string): Promise<string | null> 
 let playStart: number | null = null;
 let usageInterval: ReturnType<typeof globalThis.setInterval> | null = null;
 
-function startUsageTimer(): void {
+async function startUsageTimer(): Promise<void> {
     if (usageInterval) return;
     playStart = Date.now();
+
+    // Scale the reporting interval to the remaining time so small limits react quickly
+    const { usedSeconds, limitSeconds } = await sendMsg({ type: 'getRemainingFun' });
+    const remaining = Math.max(0, limitSeconds - usedSeconds);
+    const intervalMs = remaining <= 10 ? 1000 : 5000;
+    const flushThreshold = remaining <= 10 ? 1 : 10;
+
     usageInterval = globalThis.setInterval(async () => {
         const elapsed = Math.floor((Date.now() - (playStart as number)) / 1000);
-        if (elapsed >= 10) {
+        if (elapsed >= flushThreshold) {
             await sendMsg({ type: 'addUsage', domain: 'youtube.com', seconds: elapsed });
             playStart = Date.now();
 
             // Check if the limit was just reached and trigger a video check
-            const { usedSeconds, limitSeconds } = await sendMsg({ type: 'getRemainingFun' });
-            if (limitSeconds > 0 && usedSeconds >= limitSeconds) {
+            const rem = await sendMsg({ type: 'getRemainingFun' });
+            if (rem.limitSeconds > 0 && rem.usedSeconds >= rem.limitSeconds) {
                 stopUsageTimer();
                 const video = document.querySelector('video');
                 if (video && !video.paused) {
@@ -181,7 +240,7 @@ function startUsageTimer(): void {
                 }
             }
         }
-    }, 5000);
+    }, intervalMs);
 }
 
 function stopUsageTimer(): void {
@@ -203,10 +262,20 @@ function isYouTubeShorts(): boolean {
 
 let shortsBlockerActive = false;
 
-// Document-level capture listener — pauses ANY video that tries to play while Shorts are blocked.
+// Document-level capture listener — pauses ANY video that tries to play while blocked.
 document.addEventListener('play', (e) => {
-    if (shortsBlockerActive && e.target instanceof HTMLVideoElement) {
+    if (e.target instanceof HTMLVideoElement &&
+        (shortsBlockerActive || document.getElementById('ss-blocker-overlay'))) {
         e.target.pause();
+    }
+}, true);
+
+// Block spacebar (and k key) from toggling playback while an overlay is active.
+document.addEventListener('keydown', (e) => {
+    if ((e.key === ' ' || e.key === 'k') &&
+        (document.getElementById('ss-blocker-overlay') || document.getElementById('ss-shorts-overlay'))) {
+        e.stopPropagation();
+        e.preventDefault();
     }
 }, true);
 
@@ -356,6 +425,7 @@ globalThis.addEventListener('yt-navigate-finish', () => {
     deactivateShortsBlocker();
     stopUsageTimer();
     approvedVideoId = null;
+    transcriptAttemptedForVideo = null;
     // Re-check for new video element after navigation
     const video = document.querySelector('video');
     if (video && video !== hookedVideo) hookVideoElement(video);
