@@ -33,7 +33,7 @@ function removeOverlay(): void {
 // --- Video ID extraction ---
 
 function getYouTubeVideoId(): string | null {
-    const url = new URL(window.location.href);
+    const url = new URL(globalThis.location.href);
     if (url.hostname.includes('youtube.com')) return url.searchParams.get('v');
     if (url.hostname === 'youtu.be') return url.pathname.slice(1);
     return null;
@@ -42,12 +42,12 @@ function getYouTubeVideoId(): string | null {
 // --- Usage timer ---
 
 let playStart: number | null = null;
-let usageInterval: number | null = null;
+let usageInterval: ReturnType<typeof globalThis.setInterval> | null = null;
 
 function startUsageTimer(): void {
     if (usageInterval) return;
     playStart = Date.now();
-    usageInterval = window.setInterval(async () => {
+    usageInterval = globalThis.setInterval(async () => {
         const elapsed = Math.floor((Date.now() - (playStart as number)) / 1000);
         if (elapsed >= 10) {
             await sendMsg({ type: 'addUsage', domain: 'youtube.com', seconds: elapsed });
@@ -129,25 +129,24 @@ function hookVideoElement(videoEl: HTMLVideoElement): void {
 // Use MutationObserver instead of polling to detect video elements
 function observeForVideo(): void {
     const existing = document.querySelector('video');
-    if (existing) hookVideoElement(existing as HTMLVideoElement);
+    if (existing) hookVideoElement(existing);
 
     const observer = new MutationObserver(() => {
         const video = document.querySelector('video');
-        if (video && video !== hookedVideo) hookVideoElement(video as HTMLVideoElement);
+        if (video && video !== hookedVideo) hookVideoElement(video);
     });
     observer.observe(document.documentElement, { childList: true, subtree: true });
 }
 
 // Clean up overlay on SPA navigation
-window.addEventListener('yt-navigate-finish', () => {
+globalThis.addEventListener('yt-navigate-finish', () => {
     removeOverlay();
     stopUsageTimer();
     // Re-check for new video element after navigation
     const video = document.querySelector('video');
-    if (video && video !== hookedVideo) hookVideoElement(video as HTMLVideoElement);
+    if (video && video !== hookedVideo) hookVideoElement(video);
 });
-window.addEventListener('popstate', () => removeOverlay());
+globalThis.addEventListener('popstate', () => removeOverlay());
 
 observeForVideo();
 
-export { };

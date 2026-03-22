@@ -64,11 +64,10 @@ async function fetchTranscript(videoId: string): Promise<string | null> {
     }
 }
 
-async function callRouterClassify(prompt: string, model?: string): Promise<any> {
+async function callRouterClassify(prompt: string, model = 'gpt-4o-mini'): Promise<any> {
     const key = ENV_VARS.OPENROUTER_API_KEY;
     const routerUrl = ENV_VARS.OPENROUTER_URL || 'https://api.openrouter.ai/v1/responses';
-    const resolvedModel = model || 'gpt-4o-mini';
-    console.log('[API] callRouterClassify → POST', routerUrl, '| model:', resolvedModel, '| prompt length:', prompt.length);
+    console.log('[API] callRouterClassify → POST', routerUrl, '| model:', model, '| prompt length:', prompt.length);
     if (!key) {
         console.warn('[API] callRouterClassify: no API key, aborting');
         return { error: 'no_api_key' };
@@ -78,7 +77,7 @@ async function callRouterClassify(prompt: string, model?: string): Promise<any> 
         const resp = await fetch(routerUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-            body: JSON.stringify({ model: resolvedModel, input: prompt }),
+            body: JSON.stringify({ model, input: prompt }),
         });
         console.log('[API] callRouterClassify ←', resp.status, resp.statusText);
         if (!resp.ok) {
@@ -244,4 +243,3 @@ browser.runtime.onMessage.addListener(async (msg: any) => {
 
 console.log('Smart Site Blocker background worker loaded');
 
-export { };

@@ -30,4 +30,3 @@ document.addEventListener('DOMContentLoaded', async () => {
     disableBtn?.addEventListener('click', openOpts);
 });
 
-export { };

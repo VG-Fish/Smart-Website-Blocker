@@ -2,14 +2,158 @@
 
 declare const browser: any;
 
+// --- Module-scope helpers (no closure dependencies) ---
+
+function validateGoal(text: string): { ok: boolean; reason?: string } {
+    if (!text || text.length < 20) return { ok: false, reason: 'Too short; be more specific (>= 20 chars).' };
+    const words = text.split(/\s+/).filter(Boolean);
+    if (words.length < 6) return { ok: false, reason: 'Too few words; include more detail (who/what/how).' };
+    const verbs = ['learn', 'use', 'apply', 'understand', 'build', 'solve', 'practice'];
+    const low = text.toLowerCase();
+    if (!verbs.some(v => low.includes(v)) && !/^i (want|would like)/i.test(low)) {
+        return { ok: false, reason: 'Include an action verb (e.g., "I want to learn", "use", "apply").' };
+    }
+    return { ok: true };
+}
+
+function createToast(text: string, type: 'success' | 'error' = 'success') {
+    const t = document.createElement('div');
+    t.textContent = text;
+    Object.assign(t.style, {
+        position: 'fixed', right: '16px', bottom: '16px', padding: '10px 14px',
+        borderRadius: '6px', boxShadow: '0 2px 6px rgba(0,0,0,0.2)', zIndex: '99999',
+        color: '#fff', fontSize: '13px', background: type === 'success' ? '#2e7d32' : '#b00020',
+    });
+    document.body.appendChild(t);
+    setTimeout(() => {
+        t.style.transition = 'opacity 0.35s ease';
+        t.style.opacity = '0';
+        setTimeout(() => t.remove(), 400);
+    }, 2000);
+}
+
+function showValidationMsg(msg: string) {
+    let d = document.getElementById('goalValidationDialog');
+    if (!d) {
+        d = document.createElement('div');
+        d.id = 'goalValidationDialog';
+        Object.assign(d.style, {
+            position: 'relative', marginTop: '8px', padding: '8px', borderRadius: '6px',
+            background: 'rgba(200,40,40,0.08)', border: '1px solid rgba(200,40,40,0.2)', color: '#700',
+        });
+        const container = document.querySelector('.container');
+        container?.insertBefore(d, container.firstChild?.nextSibling || null);
+    }
+    d.textContent = msg;
+}
+
+async function submitQuizAnswers(questions: any[], answers: any[]) {
+    let correct = 0;
+    for (let i = 0; i < questions.length; i++) {
+        const q = questions[i];
+        if (q.answer_choices?.length) {
+            if (answers[i] != null && q.answer_choices[answers[i]]?.isCorrect) correct++;
+        } else if (answers[i] && String(answers[i]).trim()) {
+            correct++;
+        }
+    }
+    const score = Math.round((correct / questions.length) * 100);
+    if (score >= 60) {
+        const s = await browser.runtime.sendMessage({ type: 'getSettings' });
+        s.blockingEnabled = false;
+        await browser.runtime.sendMessage({ type: 'saveSettings', settings: s });
+        createToast('Quiz passed — blocking disabled');
+        location.reload();
+    } else {
+        alert(`Quiz failed — score ${score}%. Need >= 60%.`);
+    }
+}
+
+function renderQuizCarousel(container: HTMLElement, questions: any[]) {
+    container.innerHTML = '';
+    let idx = 0;
+    const answers: any[] = new Array(questions.length).fill(null);
+
+    const qBox = document.createElement('div');
+    Object.assign(qBox.style, { border: '1px solid #ddd', padding: '12px', borderRadius: '8px', background: '#fff' });
+    container.appendChild(qBox);
+
+    const nav = document.createElement('div');
+    nav.style.marginTop = '8px';
+    container.appendChild(nav);
+
+    function render() {
+        qBox.innerHTML = '';
+        const q = questions[idx];
+
+        const header = document.createElement('div');
+        header.textContent = `Question ${idx + 1} of ${questions.length}`;
+        header.style.fontWeight = '600';
+        header.style.marginBottom = '8px';
+        qBox.appendChild(header);
+
+        const qText = document.createElement('div');
+        qText.textContent = q.question;
+        qText.style.marginBottom = '10px';
+        qBox.appendChild(qText);
+
+        const choicesDiv = document.createElement('div');
+        if (q.answer_choices?.length) {
+            q.answer_choices.forEach((c: any, ci: number) => {
+                const label = document.createElement('label');
+                label.style.display = 'block';
+                const input = document.createElement('input');
+                input.type = 'radio';
+                input.name = `q${idx}`;
+                input.checked = answers[idx] === ci;
+                input.addEventListener('change', () => { answers[idx] = ci; });
+                label.appendChild(input);
+                label.appendChild(document.createTextNode(' ' + c.choice));
+                choicesDiv.appendChild(label);
+            });
+        } else {
+            const ta = document.createElement('input');
+            ta.type = 'text';
+            ta.value = answers[idx] || '';
+            ta.addEventListener('input', () => { answers[idx] = ta.value; });
+            choicesDiv.appendChild(ta);
+        }
+        qBox.appendChild(choicesDiv);
+
+        nav.innerHTML = '';
+        const prev = document.createElement('button');
+        prev.textContent = 'Previous';
+        prev.disabled = idx === 0;
+        prev.addEventListener('click', () => { idx--; render(); });
+        nav.appendChild(prev);
+
+        const next = document.createElement('button');
+        next.textContent = idx === questions.length - 1 ? 'Submit' : 'Next';
+        next.style.marginLeft = '8px';
+        next.addEventListener('click', async () => {
+            if (idx === questions.length - 1) {
+                await submitQuizAnswers(questions, answers);
+            } else {
+                idx++;
+                render();
+            }
+        });
+        nav.appendChild(next);
+    }
+
+    render();
+}
+
+// --- Page init ---
+
 document.addEventListener('DOMContentLoaded', async () => {
     const newGoalInput = document.getElementById('newGoalInput') as HTMLInputElement | null;
     const addGoalBtn = document.getElementById('addGoalBtn') as HTMLButtonElement | null;
-    const goalsList = document.getElementById('goalsList') as HTMLElement | null;
+    const goalsList = document.getElementById('goalsList');
     const funLimit = document.getElementById('funLimit') as HTMLInputElement | null;
-    const funLimitHint = document.getElementById('funLimitHint') as HTMLElement | null;
+    const funLimitHint = document.getElementById('funLimitHint');
     const genQuizBtn = document.getElementById('genQuizBtn') as HTMLButtonElement | null;
-    const quizArea = document.getElementById('quizArea') as HTMLElement | null;
+    const quizArea = document.getElementById('quizArea');
 
     let settings = await browser.runtime.sendMessage({ type: 'getSettings' });
 
@@ -36,7 +180,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (funLimitHint) {
             funLimitHint.className = `fun-limit-hint ${valid ? 'success' : 'error'}`;
             funLimitHint.style.display = 'block';
-            funLimitHint.textContent = valid ? `✓ ${val} minute${val === 1 ? '' : 's'} per day saved` : 'Enter a whole number ≥ 0';
+            const plural = val === 1 ? '' : 's';
+            funLimitHint.textContent = valid ? `✓ ${val} minute${plural} per day saved` : 'Enter a whole number ≥ 0';
         }
         if (valid) {
             settings.funLimitMinutes = val;
@@ -84,18 +229,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderGoals(settings.goals);
         if (newGoalInput) newGoalInput.value = '';
         createToast('Goal added');
-    }
-
-    function validateGoal(text: string): { ok: boolean; reason?: string } {
-        if (!text || text.length < 20) return { ok: false, reason: 'Too short; be more specific (>= 20 chars).' };
-        const words = text.split(/\s+/).filter(Boolean);
-        if (words.length < 6) return { ok: false, reason: 'Too few words; include more detail (who/what/how).' };
-        const verbs = ['learn', 'use', 'apply', 'understand', 'build', 'solve', 'practice'];
-        const low = text.toLowerCase();
-        if (!verbs.some(v => low.includes(v)) && !/^i (want|would like)/i.test(low)) {
-            return { ok: false, reason: 'Include an action verb (e.g., "I want to learn", "use", "apply").' };
-        }
-        return { ok: true };
     }
 
     function renderGoals(goals: string[]) {
@@ -174,139 +307,4 @@ document.addEventListener('DOMContentLoaded', async () => {
         await refreshAndRender(s);
         createToast('Goal deleted');
     }
-
-    // --- Toast & validation UI ---
-
-    function createToast(text: string, type: 'success' | 'error' = 'success') {
-        const t = document.createElement('div');
-        t.textContent = text;
-        Object.assign(t.style, {
-            position: 'fixed', right: '16px', bottom: '16px', padding: '10px 14px',
-            borderRadius: '6px', boxShadow: '0 2px 6px rgba(0,0,0,0.2)', zIndex: '99999',
-            color: '#fff', fontSize: '13px', background: type === 'success' ? '#2e7d32' : '#b00020',
-        });
-        document.body.appendChild(t);
-        setTimeout(() => {
-            t.style.transition = 'opacity 0.35s ease';
-            t.style.opacity = '0';
-            setTimeout(() => t.remove(), 400);
-        }, 2000);
-    }
-
-    function showValidationMsg(msg: string) {
-        let d = document.getElementById('goalValidationDialog');
-        if (!d) {
-            d = document.createElement('div');
-            d.id = 'goalValidationDialog';
-            Object.assign(d.style, {
-                position: 'relative', marginTop: '8px', padding: '8px', borderRadius: '6px',
-                background: 'rgba(200,40,40,0.08)', border: '1px solid rgba(200,40,40,0.2)', color: '#700',
-            });
-            const container = document.querySelector('.container');
-            container?.insertBefore(d, container.firstChild?.nextSibling || null);
-        }
-        d.textContent = msg;
-    }
-
-    // --- Quiz carousel ---
-
-    function renderQuizCarousel(container: HTMLElement, questions: any[]) {
-        container.innerHTML = '';
-        let idx = 0;
-        const answers: any[] = Array(questions.length).fill(null);
-
-        const qBox = document.createElement('div');
-        Object.assign(qBox.style, { border: '1px solid #ddd', padding: '12px', borderRadius: '8px', background: '#fff' });
-        container.appendChild(qBox);
-
-        const nav = document.createElement('div');
-        nav.style.marginTop = '8px';
-        container.appendChild(nav);
-
-        function render() {
-            qBox.innerHTML = '';
-            const q = questions[idx];
-
-            const header = document.createElement('div');
-            header.textContent = `Question ${idx + 1} of ${questions.length}`;
-            header.style.fontWeight = '600';
-            header.style.marginBottom = '8px';
-            qBox.appendChild(header);
-
-            const qText = document.createElement('div');
-            qText.textContent = q.question;
-            qText.style.marginBottom = '10px';
-            qBox.appendChild(qText);
-
-            const choicesDiv = document.createElement('div');
-            if (q.answer_choices?.length) {
-                q.answer_choices.forEach((c: any, ci: number) => {
-                    const label = document.createElement('label');
-                    label.style.display = 'block';
-                    const input = document.createElement('input');
-                    input.type = 'radio';
-                    input.name = `q${idx}`;
-                    input.checked = answers[idx] === ci;
-                    input.addEventListener('change', () => { answers[idx] = ci; });
-                    label.appendChild(input);
-                    label.appendChild(document.createTextNode(' ' + c.choice));
-                    choicesDiv.appendChild(label);
-                });
-            } else {
-                const ta = document.createElement('input');
-                ta.type = 'text';
-                ta.value = answers[idx] || '';
-                ta.addEventListener('input', () => { answers[idx] = ta.value; });
-                choicesDiv.appendChild(ta);
-            }
-            qBox.appendChild(choicesDiv);
-
-            // Navigation buttons
-            nav.innerHTML = '';
-            const prev = document.createElement('button');
-            prev.textContent = 'Previous';
-            prev.disabled = idx === 0;
-            prev.addEventListener('click', () => { idx--; render(); });
-            nav.appendChild(prev);
-
-            const next = document.createElement('button');
-            next.textContent = idx === questions.length - 1 ? 'Submit' : 'Next';
-            next.style.marginLeft = '8px';
-            next.addEventListener('click', async () => {
-                if (idx === questions.length - 1) {
-                    await submitQuizAnswers(questions, answers);
-                } else {
-                    idx++;
-                    render();
-                }
-            });
-            nav.appendChild(next);
-        }
-
-        render();
-    }
-
-    async function submitQuizAnswers(questions: any[], answers: any[]) {
-        let correct = 0;
-        for (let i = 0; i < questions.length; i++) {
-            const q = questions[i];
-            if (q.answer_choices?.length) {
-                if (answers[i] != null && q.answer_choices[answers[i]]?.isCorrect) correct++;
-            } else {
-                if (answers[i] && String(answers[i]).trim()) correct++;
-            }
-        }
-        const score = Math.round((correct / questions.length) * 100);
-        if (score >= 60) {
-            const s = await browser.runtime.sendMessage({ type: 'getSettings' });
-            s.blockingEnabled = false;
-            await browser.runtime.sendMessage({ type: 'saveSettings', settings: s });
-            createToast('Quiz passed — blocking disabled');
-            location.reload();
-        } else {
-            alert(`Quiz failed — score ${score}%. Need >= 60%.`);
-        }
-    }
 });
-
-export { };
