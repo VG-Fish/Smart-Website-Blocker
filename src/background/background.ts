@@ -6,7 +6,7 @@ import { loadEnv } from '../utils/env_reader';
 declare const browser: any;
 
 let ENV_VARS: Record<string, string> = {};
-loadEnv().then(e => { ENV_VARS = e; }).catch(() => { console.warn('Failed to load .env variables'); });
+loadEnv().then(e => { ENV_VARS = e; }).catch((err: any) => { console.error('Failed to load .env variables', err); });
 
 const STORAGE_KEYS = { SETTINGS: 'ss_settings', USAGE: 'ss_usage' };
 
@@ -115,9 +115,26 @@ function extractJson(text: string, opener: string, closer: string): string {
     return start >= 0 && end >= 0 ? text.slice(start, end + 1) : text;
 }
 
-async function checkAlignment(transcript: string, settings: any, videoUrl?: string): Promise<any> {
+    function keywordAlign(goals: string[], text: string): boolean {
+        if (!goals || goals.length === 0 || !text) return false;
+        const haystack = text.toLowerCase();
+        return goals.some(goal => {
+            const words = goal.toLowerCase().split(/\s+/).filter(Boolean);
+            if (words.length === 0) return false;
+            const required = Math.max(1, Math.floor(words.length / 3));
+            const matches = words.reduce((count, w) => {
+                if (w.length <= 2) return count;
+                return haystack.includes(w) ? count + 1 : count;
+            }, 0);
+            return matches >= required;
+        });
+    }
+
+async function checkAlignment(transcript: string, settings: any, videoUrl?: string, videoTitle?: string): Promise<any> {
     const goals = extractGoals(settings);
     if (goals.length === 0) return { ok: true, aligned: false, score: 0, reasons: 'no goals set' };
+
+    const backupText = [videoTitle, videoUrl, transcript].filter(Boolean).join(' ');
 
     const goalsList = goals.map((g: string, i: number) => `${i + 1}. ${g}`).join('\n');
     const urlLine = videoUrl ? `\n\nVideo URL: ${videoUrl}` : '';
@@ -128,16 +145,18 @@ async function checkAlignment(transcript: string, settings: any, videoUrl?: stri
 
     try {
         const parsed = JSON.parse(extractJson(routerResp.text, '{', '}'));
-        return { ok: true, aligned: !!parsed.aligned, score: parsed.score || 0, matchedGoal: parsed.matchedGoal, reasons: parsed.reasons || '' };
-    } catch {
+        if (parsed && parsed.aligned) {
+            return { ok: true, aligned: true, score: parsed.score || 0, matchedGoal: parsed.matchedGoal, reasons: parsed.reasons || '' };
+        }
+        if (keywordAlign(goals, backupText)) {
+            return { ok: true, aligned: true, score: parsed?.score || 0.45, matchedGoal: parsed?.matchedGoal ?? 0, reasons: 'keyword title/url fallback' };
+        }
+        return { ok: true, aligned: false, score: parsed?.score || 0, matchedGoal: parsed?.matchedGoal, reasons: parsed?.reasons || 'not aligned' };
+    } catch (err: any) {
+        console.error('[API] checkAlignment JSON parse error:', err.message);
         // Fallback: keyword matching
-        const lc = (transcript || '').toLowerCase();
-        for (let i = 0; i < goals.length; i++) {
-            const words = (goals[i] || '').toLowerCase().split(/\s+/).filter(Boolean);
-            const matches = words.filter((w: string) => lc.includes(w)).length;
-            if (matches >= Math.max(1, Math.floor(words.length / 2))) {
-                return { ok: true, aligned: true, score: 0.6, matchedGoal: i, reasons: 'fallback keyword match' };
-            }
+        if (keywordAlign(goals, backupText)) {
+            return { ok: true, aligned: true, score: 0.5, matchedGoal: 0, reasons: 'fallback keyword match' };
         }
         return { ok: true, aligned: false, score: 0.1, reasons: 'no keyword matches' };
     }
@@ -176,7 +195,9 @@ async function generateQuiz(settings: any): Promise<any> {
                 parsed.every((it: any) => typeof it.question === 'string' && Array.isArray(it.answer_choices))) {
                 return parsed;
             }
-        } catch { /* retry */ }
+        } catch (err: any) {
+            console.error('[API] generateQuiz JSON parse error:', err.message);
+        }
     }
 
     return fallbackQuiz(goal);
@@ -188,9 +209,15 @@ const handlers: Record<string, (msg: any) => Promise<any>> = {
         const settings = await getSettings();
         // Use transcript from content script (YouTube captions) if available, else fall back to jina.ai
         const transcript = msg.transcript || await fetchTranscript(msg.videoId);
-        if (!transcript) return { ok: false, error: 'no_transcript' };
+        if (!transcript) {
+            const fallbackText = [msg.videoTitle, `https://www.youtube.com/watch?v=${msg.videoId}`].filter(Boolean).join(' ');
+            if (keywordAlign(extractGoals(settings), fallbackText)) {
+                return { ok: true, aligned: true, score: 0.4, matchedGoal: 0, reasons: 'no transcript but title/url matched goal' };
+            }
+            return { ok: false, error: 'no_transcript' };
+        }
         const videoUrl = `https://www.youtube.com/watch?v=${msg.videoId}`;
-        return checkAlignment(transcript, settings, videoUrl);
+        return checkAlignment(transcript, settings, videoUrl, msg.videoTitle);
     },
 
     async addUsage(msg) {
@@ -247,8 +274,10 @@ browser.runtime.onMessage.addListener(async (msg: any) => {
 
 // Open settings page in a new tab when the extension toolbar icon is clicked
 function openOptionsInNewTab() {
-    const url = browser.runtime.getURL('dist/options.html');
-    browser.tabs.create({ url });
+    // Prefer the options page declared in the manifest (covers dev vs dist layouts)
+    const manifest = browser.runtime.getManifest?.();
+    const optionsPage = manifest?.options_ui?.page || 'dist/options.html';
+    browser.tabs.create({ url: browser.runtime.getURL(optionsPage) });
 }
 
 if (browser.browserAction?.onClicked) {

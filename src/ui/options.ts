@@ -163,6 +163,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const newGoalInput = document.getElementById('newGoalInput') as HTMLInputElement | null;
     const addGoalBtn = document.getElementById('addGoalBtn') as HTMLButtonElement | null;
     const goalsList = document.getElementById('goalsList');
+    const goalAnalysisLoading = document.getElementById('goalAnalysisLoading');
     const funLimit = document.getElementById('funLimit') as HTMLInputElement | null;
     const funLimitHint = document.getElementById('funLimitHint');
     const genQuizBtn = document.getElementById('genQuizBtn') as HTMLButtonElement | null;
@@ -255,6 +256,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const val = (newGoalInput?.value || '').trim();
         if (!val) return;
 
+        // show loading indicator above goals while analysis runs
+        if (goalAnalysisLoading) { goalAnalysisLoading.style.display = 'block'; }
         if (addGoalBtn) { addGoalBtn.disabled = true; addGoalBtn.textContent = 'Validating…'; }
 
         try {
@@ -275,6 +278,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (newGoalInput) newGoalInput.value = '';
             createToast('Goal added');
         } finally {
+            // hide loading/analysis popup once done
+            if (goalAnalysisLoading) { goalAnalysisLoading.style.display = 'none'; }
             if (addGoalBtn) { addGoalBtn.disabled = false; addGoalBtn.textContent = 'Add Goal'; }
         }
     }

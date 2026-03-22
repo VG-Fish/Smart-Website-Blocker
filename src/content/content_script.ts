@@ -89,7 +89,12 @@ async function fetchYouTubeTranscript(videoId: string): Promise<string | null> {
         if (!match) return null;
 
         let captionsObj: any;
-        try { captionsObj = JSON.parse(match[1]); } catch { return null; }
+        try {
+            captionsObj = JSON.parse(match[1]);
+        } catch (err: any) {
+            console.error('[YouTube transcript] JSON parse error:', err);
+            return null;
+        }
 
         const tracks = captionsObj?.playerCaptionsTracklistRenderer?.captionTracks;
         if (!Array.isArray(tracks) || tracks.length === 0) return null;
@@ -115,7 +120,8 @@ async function fetchYouTubeTranscript(videoId: string): Promise<string | null> {
         });
 
         return lines.length > 0 ? lines.join(' ') : null;
-    } catch {
+    } catch (err: any) {
+        console.error('[API] fetchYouTubeTranscript error:', err.message);
         return null;
     }
 }
@@ -184,7 +190,7 @@ function blockShortsPage(): void {
 
         const player = document.getElementById('shorts-player') || videoEl.parentElement;
         if (player) {
-            (player as HTMLElement).style.position = 'relative';
+            player.style.position = 'relative';
             Object.assign(overlay.style, {
                 position: 'absolute', left: '0', top: '0', width: '100%', height: '100%',
                 background: 'rgba(0,0,0,0.92)', color: 'white', zIndex: '2147483647',

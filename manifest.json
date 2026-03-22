@@ -36,7 +36,7 @@
         "open-settings": {
             "suggested_key": {
                 "default": "Ctrl+Shift+L",
-                "mac": "MacCtrl+Shift+L"
+                "mac": "Command+Shift+L"
             },
             "description": "Open Smart Site Blocker Settings"
         }

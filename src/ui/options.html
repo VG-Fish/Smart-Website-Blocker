@@ -13,12 +13,15 @@
 
         <section class="settings-section">
             <h2 class="section-title">Learning Goals</h2>
-            <label for="newGoalInput">Make each goal specific — e.g., "I want to learn about using superposition in circuits."</label>
+            <label for="newGoalInput">Make each goal specific — e.g., "I want to learn about using superposition in
+                circuits."</label>
             <div class="row">
                 <input id="newGoalInput" type="text"
                     placeholder="e.g., I want to learn about using superposition in circuits." />
                 <button id="addGoalBtn">Add Goal</button>
             </div>
+            <!-- loading indicator shown while goals are analyzed -->
+            <output id="goalAnalysisLoading" class="goal-loading" style="display:none; margin-top:8px">Loading…</output>
             <div class="goals-divider">Added goals</div>
             <div id="goalsList"></div>
         </section>
@@ -46,8 +49,13 @@
 
         <section class="settings-section">
             <h2 class="section-title">Knowledge Quiz</h2>
-            <p class="section-description">Test your understanding of your learning goals. Score 60% or higher to temporarily disable blocking.</p>
-            <button id="genQuizBtn">Take quiz</button>
+            <p class="section-description">Test your understanding of your learning goals. Score 60% or higher to
+                temporarily disable blocking.</p>
+            <div class="quiz-action">
+                <div class="quiz-action-desc">Click the button below to generate a short quiz based on your stated
+                    goals.</div>
+                <button id="genQuizBtn">Take quiz</button>
+            </div>
             <div id="quizArea" style="display:none; margin-top:24px"></div>
         </section>
 

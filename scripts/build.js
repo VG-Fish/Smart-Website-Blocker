@@ -20,7 +20,9 @@ function readEnvKey(envPath, key) {
             const [k, ...rest] = trimmed.split('=');
             if (k.trim() === key) return rest.join('=').trim();
         }
-    } catch { /* .env absent — skip */ }
+    } catch (err) {
+        console.warn(`Could not read ${envPath}:`, err?.message);
+    }
     return null;
 }
 
@@ -34,7 +36,7 @@ function readSonarProp(key) {
             const [k, ...rest] = trimmed.split('=');
             if (k.trim() === key) return rest.join('=').trim();
         }
-    } catch { /* file absent */ }
+    } catch (err) { console.warn('Could not read sonar-project.properties:', err?.message); }
     return null;
 }
 
@@ -144,7 +146,7 @@ async function buildAll(overwriteRoot, target, skipSonar, debug = false) {
 
     if (overwriteRoot) {
         for (const ext of ['popup.html', 'options.html', 'styles.css']) {
-            try { await copyToRoot(path.join(distRoot, ext)); } catch { /* skip */ }
+            try { await copyToRoot(path.join(distRoot, ext)); } catch (err) { console.warn('Could not copy file:', err?.message); }
         }
     }
 
