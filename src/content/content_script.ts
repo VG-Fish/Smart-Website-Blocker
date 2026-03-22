@@ -12,6 +12,28 @@ function sendMsg(msg: any): Promise<any> {
 
 // --- Overlay UI ---
 
+// Attaches an overlay element to a player container, or falls back to fixed positioning over the video.
+function attachOverlayToPlayer(overlay: HTMLElement, videoEl: HTMLVideoElement, playerId: string, bg: string): void {
+    const player = document.getElementById(playerId) || videoEl.parentElement;
+    if (player) {
+        Object.assign(overlay.style, {
+            position: 'absolute', left: '0', top: '0', width: '100%', height: '100%',
+            background: bg, color: 'white', zIndex: '2147483647',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        });
+        player.appendChild(overlay);
+    } else {
+        const rect = videoEl.getBoundingClientRect();
+        Object.assign(overlay.style, {
+            position: 'fixed', left: `${rect.left}px`, top: `${rect.top}px`,
+            width: `${rect.width}px`, height: `${rect.height}px`,
+            background: bg, color: 'white', zIndex: '2147483647',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        });
+        document.documentElement.appendChild(overlay);
+    }
+}
+
 // Creates an overlay scoped to the YouTube video player, not the full page.
 function createOverlay(videoEl: HTMLVideoElement): void {
     if (document.getElementById('ss-blocker-overlay')) return;
@@ -22,27 +44,7 @@ function createOverlay(videoEl: HTMLVideoElement): void {
     <h2 id="ss-title">Checking video alignment with your goal…</h2>
     <p id="ss-body">Please wait — we are fetching the transcript and checking if this video helps your goal.</p>
     <div id="ss-spinner" style="margin-top:20px">Checking Video Content...</div></div>`;
-
-    // Attach inside the YouTube player container so only the video is covered.
-    const player = document.getElementById('movie_player') || videoEl.parentElement;
-    if (player) {
-        Object.assign(overlay.style, {
-            position: 'absolute', left: '0', top: '0', width: '100%', height: '100%',
-            background: 'rgba(0,0,0,0.9)', color: 'white', zIndex: '2147483647',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        });
-        player.appendChild(overlay);
-    } else {
-        // Fallback: position over the video element using fixed coords.
-        const rect = videoEl.getBoundingClientRect();
-        Object.assign(overlay.style, {
-            position: 'fixed', left: `${rect.left}px`, top: `${rect.top}px`,
-            width: `${rect.width}px`, height: `${rect.height}px`,
-            background: 'rgba(0,0,0,0.9)', color: 'white', zIndex: '2147483647',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        });
-        document.documentElement.appendChild(overlay);
-    }
+    attachOverlayToPlayer(overlay, videoEl, 'movie_player', 'rgba(0,0,0,0.9)');
 }
 
 // Shows a small non-blocking banner at the top of the page (for non-video pages).
@@ -78,53 +80,79 @@ function getYouTubeVideoId(): string | null {
     return null;
 }
 
-// --- YouTube transcript extraction ---
+// --- YouTube transcript extraction (DOM-based) ---
 
-async function fetchYouTubeTranscript(videoId: string): Promise<string | null> {
+// Waits for a CSS selector to appear in the DOM, using a MutationObserver.
+function waitForSelector(selector: string, timeout: number): Promise<boolean> {
+    if (document.querySelector(selector)) return Promise.resolve(true);
+    return new Promise(resolve => {
+        const observer = new MutationObserver(() => {
+            if (document.querySelector(selector)) {
+                observer.disconnect();
+                resolve(true);
+            }
+        });
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+        setTimeout(() => { observer.disconnect(); resolve(false); }, timeout);
+    });
+}
+
+// Attempts to open the YouTube transcript panel so that segment elements are in the DOM.
+async function openTranscriptPanel(): Promise<boolean> {
+    const SEG_SELECTOR = 'ytd-transcript-segment-renderer';
+    if (document.querySelector(SEG_SELECTOR)) return true;
+
+    // Method 1: Click the "Show transcript" button in the video description section.
+    const descBtn = document.querySelector(
+        'ytd-video-description-transcript-section-renderer button'
+    ) as HTMLElement | null;
+    if (descBtn) {
+        descBtn.click();
+        if (await waitForSelector(SEG_SELECTOR, 4000)) return true;
+    }
+
+    // Method 2: Scan all visible buttons for one whose label contains "transcript".
+    const allButtons = Array.from(document.querySelectorAll(
+        'button, ytd-button-renderer, tp-yt-paper-button'
+    ));
+    for (const btn of allButtons) {
+        const label = (btn.textContent || '').toLowerCase();
+        if (label.includes('transcript') && !label.includes('search')) {
+            (btn as HTMLElement).click();
+            if (await waitForSelector(SEG_SELECTOR, 4000)) return true;
+        }
+    }
+
+    return false;
+}
+
+// Extracts transcript text from the DOM transcript panel segments.
+async function fetchYouTubeTranscript(_videoId: string): Promise<string | null> {
     try {
-        // Fetch the watch page to extract caption track URL from ytInitialPlayerResponse
-        const pageResp = await fetch(`https://www.youtube.com/watch?v=${videoId}`);
-        if (!pageResp.ok) return null;
-        const html = await pageResp.text();
-
-        // Extract captions JSON from ytInitialPlayerResponse
-        const match = /"captions":\s*(\{.*?\})\s*,\s*"videoDetails"/s.exec(html);
-        if (!match) return null;
-
-        let captionsObj: any;
-        try {
-            captionsObj = JSON.parse(match[1]);
-        } catch (err: any) {
-            console.error('[YouTube transcript] JSON parse error:', err);
+        const panelOpened = await openTranscriptPanel();
+        if (!panelOpened) {
+            console.warn('[SmartBlocker] Could not open transcript panel');
             return null;
         }
 
-        const tracks = captionsObj?.playerCaptionsTracklistRenderer?.captionTracks;
-        if (!Array.isArray(tracks) || tracks.length === 0) return null;
+        // Collect text from every ytd-transcript-segment-renderer
+        const segments = document.querySelectorAll('ytd-transcript-segment-renderer');
+        if (segments.length === 0) return null;
 
-        // Prefer English, fall back to first available
-        const enTrack = tracks.find((t: any) => t.languageCode === 'en') || tracks[0];
-        const captionUrl = enTrack?.baseUrl;
-        if (!captionUrl) return null;
-
-        // Fetch the timed text XML
-        const xmlResp = await fetch(captionUrl);
-        if (!xmlResp.ok) return null;
-        const xmlText = await xmlResp.text();
-
-        // Parse XML and extract text content
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(xmlText, 'text/xml');
-        const textNodes = doc.querySelectorAll('text');
         const lines: string[] = [];
-        textNodes.forEach(node => {
-            const t = (node.textContent || '').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-            if (t.trim()) lines.push(t.trim());
+        segments.forEach(seg => {
+            // The segment text lives in a yt-formatted-string with class "segment-text"
+            // but fall back to any yt-formatted-string if that class isn't found.
+            const textEl = seg.querySelector('yt-formatted-string.segment-text')
+                || seg.querySelector('yt-formatted-string');
+            const text = textEl?.textContent?.trim();
+            if (text) lines.push(text);
         });
 
+        console.log(`[SmartBlocker] Extracted ${lines.length} transcript segments from DOM`);
         return lines.length > 0 ? lines.join(' ') : null;
     } catch (err: any) {
-        console.error('[API] fetchYouTubeTranscript error:', err.message);
+        console.error('[SmartBlocker] fetchYouTubeTranscript DOM error:', err.message);
         return null;
     }
 }
@@ -149,16 +177,7 @@ function startUsageTimer(): void {
                 stopUsageTimer();
                 const video = document.querySelector('video');
                 if (video && !video.paused) {
-                    isPlayAttemptInProgress = true;
-                    const wasMuted = video.muted;
-                    video.muted = true;
-                    const allowed = await onPlayAttempt(video);
-                    if (allowed) {
-                        video.muted = wasMuted;
-                    } else {
-                        video.pause();
-                    }
-                    isPlayAttemptInProgress = false;
+                    await muteCheckAndRestore(video);
                 }
             }
         }
@@ -208,26 +227,7 @@ function blockShortsPage(): void {
         font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial">
         <h2>Shorts Blocked</h2>
         <p>YouTube Shorts are blocked by your settings.</p></div>`;
-
-        const player = document.getElementById('shorts-player') || videoEl.parentElement;
-        if (player) {
-            player.style.position = 'relative';
-            Object.assign(overlay.style, {
-                position: 'absolute', left: '0', top: '0', width: '100%', height: '100%',
-                background: 'rgba(0,0,0,0.92)', color: 'white', zIndex: '2147483647',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            });
-            player.appendChild(overlay);
-        } else {
-            const rect = videoEl.getBoundingClientRect();
-            Object.assign(overlay.style, {
-                position: 'fixed', left: `${rect.left}px`, top: `${rect.top}px`,
-                width: `${rect.width}px`, height: `${rect.height}px`,
-                background: 'rgba(0,0,0,0.92)', color: 'white', zIndex: '2147483647',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            });
-            document.documentElement.appendChild(overlay);
-        }
+        attachOverlayToPlayer(overlay, videoEl, 'shorts-player', 'rgba(0,0,0,0.92)');
     }
 }
 
@@ -237,6 +237,20 @@ function deactivateShortsBlocker(): void {
 }
 
 // --- Play interception helpers ---
+
+// Mutes a video, runs the play-attempt check, then restores mute or pauses.
+async function muteCheckAndRestore(video: HTMLVideoElement): Promise<void> {
+    isPlayAttemptInProgress = true;
+    const wasMuted = video.muted;
+    video.muted = true;
+    const allowed = await onPlayAttempt(video);
+    if (allowed) {
+        video.muted = wasMuted;
+    } else {
+        video.pause();
+    }
+    isPlayAttemptInProgress = false;
+}
 
 function updateOverlayMessage(message: string): void {
     const body = document.getElementById('ss-body');
@@ -318,20 +332,7 @@ function hookVideoElement(videoEl: HTMLVideoElement): void {
 
     videoEl.addEventListener('play', async () => {
         if (isPlayAttemptInProgress) return;
-        isPlayAttemptInProgress = true;
-
-        // Mute immediately to prevent audio from playing
-        const wasMuted = videoEl.muted;
-        videoEl.muted = true;
-
-        const allowed = await onPlayAttempt(videoEl);
-        if (allowed) {
-            // Restore original mute state if video is allowed
-            videoEl.muted = wasMuted;
-        } else {
-            videoEl.pause();
-        }
-        isPlayAttemptInProgress = false;
+        await muteCheckAndRestore(videoEl);
     });
 
     videoEl.addEventListener('pause', () => stopUsageTimer());
@@ -394,12 +395,7 @@ browser.storage.onChanged.addListener((changes: any) => {
         approvedVideoId = null;
         const video = document.querySelector('video');
         if (video && !video.paused) {
-            (async () => {
-                isPlayAttemptInProgress = true;
-                const allowed = await onPlayAttempt(video);
-                if (!allowed) video.pause();
-                isPlayAttemptInProgress = false;
-            })();
+            muteCheckAndRestore(video);
         }
     }
 
