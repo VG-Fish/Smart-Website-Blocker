@@ -1,38 +1,37 @@
-// content_script.ts — injected into YouTube pages (converted to TypeScript)
+// content_script.ts — injected into YouTube pages
+// Intercepts video play, checks usage limits & goal alignment, shows overlay, tracks watch time
 
+declare const browser: any;
 
-// Overlay UI
+function sendMsg(msg: any): Promise<any> {
+    return browser.runtime.sendMessage(msg);
+}
+
+// --- Overlay UI ---
+
 function createOverlay(): void {
     if (document.getElementById('ss-blocker-overlay')) return;
     const overlay = document.createElement('div');
     overlay.id = 'ss-blocker-overlay';
-    overlay.style.position = 'fixed';
-    overlay.style.left = '0';
-    overlay.style.top = '0';
-    overlay.style.width = '100%';
-    overlay.style.height = '100%';
-    overlay.style.background = 'rgba(0,0,0,0.85)';
-    overlay.style.color = 'white';
-    overlay.style.zIndex = '2147483647';
-    overlay.style.display = 'flex';
-    overlay.style.flexDirection = 'column';
-    overlay.style.alignItems = 'center';
-    overlay.style.justifyContent = 'center';
+    Object.assign(overlay.style, {
+        position: 'fixed', left: '0', top: '0', width: '100%', height: '100%',
+        background: 'rgba(0,0,0,0.85)', color: 'white', zIndex: '2147483647',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+    });
     overlay.innerHTML = `<div style="max-width:900px;padding:20px;text-align:center;
-    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;">
+    font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial">
     <h2 id="ss-title">Checking video alignment with your goal…</h2>
     <p id="ss-body">Please wait — we are fetching the transcript and checking if this video helps your goal.</p>
-    <div id="ss-spinner" style="margin-top:20px">Loading…</div>
-  </div>`;
+    <div id="ss-spinner" style="margin-top:20px">Loading…</div></div>`;
     document.documentElement.appendChild(overlay);
 }
 
 function removeOverlay(): void {
-    const el = document.getElementById('ss-blocker-overlay');
-    if (el) el.remove();
+    document.getElementById('ss-blocker-overlay')?.remove();
 }
 
-// Utility: extract YouTube video ID from page
+// --- Video ID extraction ---
+
 function getYouTubeVideoId(): string | null {
     const url = new URL(window.location.href);
     if (url.hostname.includes('youtube.com')) return url.searchParams.get('v');
@@ -40,45 +39,42 @@ function getYouTubeVideoId(): string | null {
     return null;
 }
 
-// Track playing time to count toward fun time (only while under limit)
-let playStart: number | null = null;
-let usageInterval: number | null = null as any;
+// --- Usage timer ---
 
-async function startUsageTimer(): Promise<void> {
+let playStart: number | null = null;
+let usageInterval: number | null = null;
+
+function startUsageTimer(): void {
     if (usageInterval) return;
     playStart = Date.now();
     usageInterval = window.setInterval(async () => {
-        const now = Date.now();
-        const elapsed = Math.floor((now - (playStart as number)) / 1000);
-        // every 10 seconds, send usage to background and reset playStart
+        const elapsed = Math.floor((Date.now() - (playStart as number)) / 1000);
         if (elapsed >= 10) {
-            // @ts-ignore
-            await (window as any).browser.runtime.sendMessage({ type: 'addUsage', domain: 'youtube.com', seconds: elapsed });
+            await sendMsg({ type: 'addUsage', domain: 'youtube.com', seconds: elapsed });
             playStart = Date.now();
         }
     }, 5000);
 }
 
-async function stopUsageTimer(): Promise<void> {
+function stopUsageTimer(): void {
     if (!usageInterval) return;
-    clearInterval(usageInterval as number);
+    clearInterval(usageInterval);
     usageInterval = null;
     if (playStart) {
-        const now = Date.now();
-        const elapsed = Math.floor((now - playStart) / 1000);
-        if (elapsed > 0) await (window as any).browser.runtime.sendMessage({ type: 'addUsage', domain: 'youtube.com', seconds: elapsed });
+        const elapsed = Math.floor((Date.now() - playStart) / 1000);
+        if (elapsed > 0) sendMsg({ type: 'addUsage', domain: 'youtube.com', seconds: elapsed });
         playStart = null;
     }
 }
 
-async function onPlayAttempt(videoEl: HTMLVideoElement): Promise<boolean> {
-    const settings = await (window as any).browser.runtime.sendMessage({ type: 'getSettings' });
-    if (!settings || !settings.blockingEnabled) return true; // allow play
+// --- Play interception ---
 
-    // Check today's usage and limit
-    const { usedSeconds, limitSeconds } = await (window as any).browser.runtime.sendMessage({ type: 'getRemainingFun' });
+async function onPlayAttempt(videoEl: HTMLVideoElement): Promise<boolean> {
+    const settings = await sendMsg({ type: 'getSettings' });
+    if (!settings?.blockingEnabled) return true;
+
+    const { usedSeconds, limitSeconds } = await sendMsg({ type: 'getRemainingFun' });
     if (usedSeconds < limitSeconds) {
-        // still within fun time — allow play and start tracking
         startUsageTimer();
         return true;
     }
@@ -86,7 +82,6 @@ async function onPlayAttempt(videoEl: HTMLVideoElement): Promise<boolean> {
     // Fun time exceeded — allow only educational content
     const videoId = getYouTubeVideoId();
     if (!videoId) {
-        // conservative: block
         videoEl.pause();
         createOverlay();
         const body = document.getElementById('ss-body');
@@ -94,68 +89,65 @@ async function onPlayAttempt(videoEl: HTMLVideoElement): Promise<boolean> {
         return false;
     }
 
-    // pause playback and show overlay while checking
     videoEl.pause();
     createOverlay();
 
-    // Ask background to fetch transcript and check alignment
-    const res = await (window as any).browser.runtime.sendMessage({ type: 'fetchTranscriptAndCheck', videoId });
-    if (!res || !res.ok) {
+    const res = await sendMsg({ type: 'fetchTranscriptAndCheck', videoId });
+    if (!res?.ok) {
         const body = document.getElementById('ss-body');
         if (body) body.textContent = 'Transcript unavailable — video blocked.';
         return false;
     }
 
     if (res.aligned) {
-        // allow playback (educational)
         removeOverlay();
         videoEl.play().catch(() => { });
-        // educational videos after limit should NOT count against fun time
         return true;
-    } else {
-        const body = document.getElementById('ss-body');
-        if (body) body.textContent = 'This video is not aligned with your current goal, so playback is blocked.';
-        return false;
     }
+
+    const body = document.getElementById('ss-body');
+    if (body) body.textContent = 'This video is not aligned with your current goal, so playback is blocked.';
+    return false;
 }
 
-function hookVideoElement(videoEl: HTMLVideoElement | null): void {
-    if (!videoEl) return;
+// --- Video element hooking ---
+
+let hookedVideo: HTMLVideoElement | null = null;
+
+function hookVideoElement(videoEl: HTMLVideoElement): void {
+    if (hookedVideo === videoEl) return;
+    hookedVideo = videoEl;
 
     videoEl.addEventListener('play', async () => {
-        // when play is attempted, decide
-        const allowed = await onPlayAttempt(videoEl as HTMLVideoElement);
-        if (!allowed) {
-            // ensure paused
-            videoEl.pause();
-        } else {
-            startUsageTimer();
-        }
+        const allowed = await onPlayAttempt(videoEl);
+        if (!allowed) videoEl.pause();
     });
 
-    videoEl.addEventListener('pause', () => {
-        stopUsageTimer();
-    });
+    videoEl.addEventListener('pause', () => stopUsageTimer());
 }
 
-// Observe for YouTube video tag
-function waitForVideoThenHook(): void {
-    const tryFind = () => {
+// Use MutationObserver instead of polling to detect video elements
+function observeForVideo(): void {
+    const existing = document.querySelector('video');
+    if (existing) hookVideoElement(existing as HTMLVideoElement);
+
+    const observer = new MutationObserver(() => {
         const video = document.querySelector('video');
-        if (video) {
-            hookVideoElement(video as HTMLVideoElement);
-        } else {
-            // for SPA navigation, keep trying
-            setTimeout(tryFind, 1500);
-        }
-    };
-    tryFind();
+        if (video && video !== hookedVideo) hookVideoElement(video as HTMLVideoElement);
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
 }
 
-// Clean up overlay on navigation
-window.addEventListener('yt-navigate-finish', () => removeOverlay());
+// Clean up overlay on SPA navigation
+window.addEventListener('yt-navigate-finish', () => {
+    removeOverlay();
+    stopUsageTimer();
+    // Re-check for new video element after navigation
+    const video = document.querySelector('video');
+    if (video && video !== hookedVideo) hookVideoElement(video as HTMLVideoElement);
+});
 window.addEventListener('popstate', () => removeOverlay());
 
-waitForVideoThenHook();
+observeForVideo();
 
 export { };

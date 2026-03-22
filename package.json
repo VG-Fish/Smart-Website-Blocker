@@ -8,7 +8,9 @@
         "build:overwrite-root": "node scripts/build.js --overwrite-root",
         "watch": "node scripts/watch.js",
         "watch:overwrite-root": "node scripts/watch.js --overwrite-root",
-        "dev": "npm run watch:overwrite-root"
+        "dev": "npm run watch:overwrite-root",
+        "tsc:src": "tsc -p tsconfig.dev.json",
+        "tsc:watch": "tsc -p tsconfig.dev.json --watch"
     },
     "dependencies": {
         "esbuild": "^0.27.4"

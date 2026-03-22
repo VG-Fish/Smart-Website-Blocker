@@ -19,13 +19,13 @@
         "persistent": false
     },
     "browser_action": {
-        "default_popup": "src/ui/popup.html",
+        "default_popup": "dist/popup.html",
         "default_icon": {
             "48": "icons/icon48.svg"
         }
     },
     "options_ui": {
-        "page": "src/ui/options.html",
+        "page": "dist/options.html",
         "open_in_tab": true
     },
     "icons": {

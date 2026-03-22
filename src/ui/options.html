@@ -4,7 +4,7 @@
 <head>
     <meta charset="utf-8" />
     <title>Smart Site Blocker Settings (source)</title>
-    <link rel="stylesheet" href="../ui/styles.css" />
+    <link rel="stylesheet" href="styles.css" />
 </head>
 
 <body>
@@ -20,8 +20,11 @@
         </div>
         <div id="goalsList" style="margin-top:8px"></div>
 
+        <hr style="margin:16px 0;border:none;border-top:1px solid #ddd" />
+
         <label>Fun time limit (minutes per day):</label>
         <input id="funLimit" type="number" min="0" />
+        <div id="funLimitHint" style="display:none;font-size:0.85em;margin-top:2px"></div>
 
         <div style="font-size:0.95em;color:#333;margin:6px 0;">
             To avoid storing sensitive API keys in extension storage, place your API keys in a local <code>.env</code>

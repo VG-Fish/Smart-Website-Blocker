@@ -19,13 +19,13 @@
         "service_worker": "background.js"
     },
     "action": {
-        "default_popup": "src/ui/popup.html",
+        "default_popup": "popup.html",
         "default_icon": {
             "48": "icons/icon48.svg"
         }
     },
     "options_ui": {
-        "page": "src/ui/options.html",
+        "page": "options.html",
         "open_in_tab": true
     },
     "icons": {
