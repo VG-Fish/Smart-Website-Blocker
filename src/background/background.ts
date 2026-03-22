@@ -66,7 +66,7 @@ async function fetchTranscript(videoId: string): Promise<string | null> {
 
 async function callRouterClassify(prompt: string, model = 'gpt-4o-mini'): Promise<any> {
     const key = ENV_VARS.OPENROUTER_API_KEY;
-    const routerUrl = ENV_VARS.OPENROUTER_URL || 'https://api.openrouter.ai/v1/responses';
+    const routerUrl = ENV_VARS.OPENROUTER_URL || 'https://openrouter.ai/api/v1/chat/completions';
     console.log('[API] callRouterClassify → POST', routerUrl, '| model:', model, '| prompt length:', prompt.length);
     if (!key) {
         console.warn('[API] callRouterClassify: no API key, aborting');
@@ -77,7 +77,7 @@ async function callRouterClassify(prompt: string, model = 'gpt-4o-mini'): Promis
         const resp = await fetch(routerUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-            body: JSON.stringify({ model, input: prompt }),
+            body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }] }),
         });
         console.log('[API] callRouterClassify ←', resp.status, resp.statusText);
         if (!resp.ok) {
@@ -114,12 +114,13 @@ function extractJson(text: string, opener: string, closer: string): string {
     return start >= 0 && end >= 0 ? text.slice(start, end + 1) : text;
 }
 
-async function checkAlignment(transcript: string, settings: any): Promise<any> {
+async function checkAlignment(transcript: string, settings: any, videoUrl?: string): Promise<any> {
     const goals = extractGoals(settings);
     if (goals.length === 0) return { ok: true, aligned: false, score: 0, reasons: 'no goals set' };
 
     const goalsList = goals.map((g: string, i: number) => `${i + 1}. ${g}`).join('\n');
-    const prompt = `You are given a user's learning goals (they may have several). Decide whether the following YouTube video transcript satisfies at least one of the goals. Reply ONLY in JSON with keys: aligned (true/false), score (0-1), matchedGoal (index starting at 0 if matched), reasons (short string). Goals:\n${goalsList}\n\nTranscript:\n\n${transcript}`;
+    const urlLine = videoUrl ? `\n\nVideo URL: ${videoUrl}` : '';
+    const prompt = `You are given a user's learning goals (they may have several). Decide whether the following YouTube video (URL and transcript) satisfies at least one of the goals. Consider both the video URL (which may contain the title/topic) and the transcript content. Reply ONLY in JSON with keys: aligned (true/false), score (0-1), matchedGoal (index starting at 0 if matched), reasons (short string). Goals:\n${goalsList}${urlLine}\n\nTranscript:\n\n${transcript}`;
 
     const routerResp = await callRouterClassify(prompt);
     if (routerResp.error) return { ok: false, error: routerResp.error, detail: routerResp.detail };
@@ -184,9 +185,11 @@ async function generateQuiz(settings: any): Promise<any> {
 const handlers: Record<string, (msg: any) => Promise<any>> = {
     async fetchTranscriptAndCheck(msg) {
         const settings = await getSettings();
-        const transcript = await fetchTranscript(msg.videoId);
+        // Use transcript from content script (YouTube captions) if available, else fall back to jina.ai
+        const transcript = msg.transcript || await fetchTranscript(msg.videoId);
         if (!transcript) return { ok: false, error: 'no_transcript' };
-        return checkAlignment(transcript, settings);
+        const videoUrl = `https://www.youtube.com/watch?v=${msg.videoId}`;
+        return checkAlignment(transcript, settings, videoUrl);
     },
 
     async addUsage(msg) {
@@ -240,6 +243,17 @@ browser.runtime.onMessage.addListener(async (msg: any) => {
     const handler = msg?.type && handlers[msg.type];
     if (handler) return handler(msg);
 });
+
+// Open settings page when the extension icon is clicked
+if (browser.browserAction?.onClicked) {
+    browser.browserAction.onClicked.addListener(() => {
+        browser.runtime.openOptionsPage();
+    });
+} else if (browser.action?.onClicked) {
+    browser.action.onClicked.addListener(() => {
+        browser.runtime.openOptionsPage();
+    });
+}
 
 console.log('Smart Site Blocker background worker loaded');
 

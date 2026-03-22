@@ -104,7 +104,7 @@ async function runSonar() {
     }
 }
 
-async function buildAll(overwriteRoot, target, skipSonar) {
+async function buildAll(overwriteRoot, target, skipSonar, debug = false) {
     // TypeScript check first
     try {
         console.log('Running TypeScript compiler…');
@@ -120,7 +120,7 @@ async function buildAll(overwriteRoot, target, skipSonar) {
     // Bundle
     for (const b of builds) {
         try {
-            await esbuild.build(esbuildOptions(b, 'production'));
+            await esbuild.build(esbuildOptions(b, 'production', debug));
             console.log(`Built: ${path.relative(projectRoot, b.entry)} -> ${path.relative(projectRoot, b.outfile)}`);
             if (overwriteRoot) await copyToRoot(b.outfile);
         } catch (err) {
@@ -164,9 +164,10 @@ async function main() {
 
     const overwriteRoot = args.includes('--overwrite-root');
     const skipSonar = args.includes('--skip-sonar');
+    const debug = args.includes('--debug');
     const targetArg = args.find(a => a.startsWith('--target='));
     const target = targetArg ? targetArg.split('=')[1] : 'chrome';
-    await buildAll(overwriteRoot, target, skipSonar);
+    await buildAll(overwriteRoot, target, skipSonar, debug);
     console.log('\nBuild complete.');
 }
 

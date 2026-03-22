@@ -1,6 +1,7 @@
 // options.ts — options page behaviour
 
 declare const browser: any;
+declare const __DEBUG__: boolean;
 
 // --- Module-scope helpers (no closure dependencies) ---
 
@@ -45,6 +46,14 @@ function showValidationMsg(msg: string) {
         container?.insertBefore(d, container.firstChild?.nextSibling || null);
     }
     d.textContent = msg;
+    d.style.opacity = '1';
+    d.style.transition = '';
+    const el = d;
+    setTimeout(() => {
+        el.style.transition = 'opacity 0.35s ease';
+        el.style.opacity = '0';
+        setTimeout(() => el.remove(), 400);
+    }, 3000);
 }
 
 async function submitQuizAnswers(questions: any[], answers: any[]) {
@@ -177,16 +186,36 @@ document.addEventListener('DOMContentLoaded', async () => {
     funLimit?.addEventListener('change', async () => {
         const val = Number(funLimit.value);
         const valid = funLimit.value.trim() !== '' && Number.isInteger(val) && val >= 0;
-        if (funLimitHint) {
-            funLimitHint.className = `fun-limit-hint ${valid ? 'success' : 'error'}`;
-            funLimitHint.style.display = 'block';
-            const plural = val === 1 ? '' : 's';
-            funLimitHint.textContent = valid ? `✓ ${val} minute${plural} per day saved` : 'Enter a whole number ≥ 0';
+        if (!valid) {
+            if (funLimitHint) {
+                funLimitHint.className = 'fun-limit-hint error';
+                funLimitHint.style.display = 'block';
+                funLimitHint.style.opacity = '1';
+                funLimitHint.style.transition = '';
+                funLimitHint.textContent = 'Enter a whole number >= 0';
+                setTimeout(() => {
+                    funLimitHint.style.transition = 'opacity 0.35s ease';
+                    funLimitHint.style.opacity = '0';
+                    setTimeout(() => { funLimitHint.style.display = 'none'; }, 400);
+                }, 3000);
+            }
+            return;
         }
-        if (valid) {
-            settings.funLimitMinutes = val;
-            await browser.runtime.sendMessage({ type: 'saveSettings', settings });
+
+        // Once-per-day restriction (bypassed in debug builds)
+        const today = new Date().toISOString().slice(0, 10);
+        settings = await browser.runtime.sendMessage({ type: 'getSettings' });
+        if (!__DEBUG__ && settings.lastFunLimitChangeDate === today) {
+            createToast('You can only change the fun time limit once per day.', 'error');
+            funLimit.value = settings.funLimitMinutes ?? 30;
+            return;
         }
+
+        settings.funLimitMinutes = val;
+        settings.lastFunLimitChangeDate = today;
+        await browser.runtime.sendMessage({ type: 'saveSettings', settings });
+        const plural = val === 1 ? '' : 's';
+        createToast(`Fun time limit set to ${val} minute${plural} per day`);
     });
 
     newGoalInput?.addEventListener('keydown', async (ev) => {

@@ -5,6 +5,7 @@
     "private": true,
     "scripts": {
         "build": "node scripts/build.js",
+        "build:debug": "node scripts/build.js --debug",
         "build:overwrite-root": "node scripts/build.js --overwrite-root",
         "watch": "node scripts/watch.js",
         "watch:overwrite-root": "node scripts/watch.js --overwrite-root",

@@ -6,10 +6,10 @@ const esbuild = require('esbuild');
 const path = require('path');
 const { projectRoot, builds, esbuildOptions, copyStatic, copyToRoot } = require('./shared');
 
-async function buildOnce(overwriteRoot) {
+async function buildOnce(overwriteRoot, debug) {
     for (const b of builds) {
         try {
-            await esbuild.build(esbuildOptions(b, 'development'));
+            await esbuild.build(esbuildOptions(b, 'development', debug));
             console.log(`Built: ${path.relative(projectRoot, b.entry)} -> ${path.relative(projectRoot, b.outfile)}`);
             if (overwriteRoot) await copyToRoot(b.outfile);
         } catch (err) {
@@ -22,9 +22,10 @@ async function buildOnce(overwriteRoot) {
 async function main() {
     const args = process.argv.slice(2);
     const overwriteRoot = args.includes('--overwrite-root');
+    const debug = args.includes('--debug');
 
     if (args.includes('--once')) {
-        await buildOnce(overwriteRoot);
+        await buildOnce(overwriteRoot, debug);
         console.log('\nWatch: ran --once and exiting.');
         process.exit(0);
     }
@@ -32,7 +33,7 @@ async function main() {
     console.log('Starting watch (esbuild) for TypeScript sources…');
     for (const b of builds) {
         esbuild.build({
-            ...esbuildOptions(b, 'development'),
+            ...esbuildOptions(b, 'development', debug),
             watch: {
                 onRebuild(error) {
                     if (error) console.error('Watch build failed:', error);

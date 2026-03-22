@@ -39,6 +39,51 @@ function getYouTubeVideoId(): string | null {
     return null;
 }
 
+// --- YouTube transcript extraction ---
+
+async function fetchYouTubeTranscript(videoId: string): Promise<string | null> {
+    try {
+        // Fetch the watch page to extract caption track URL from ytInitialPlayerResponse
+        const pageResp = await fetch(`https://www.youtube.com/watch?v=${videoId}`);
+        if (!pageResp.ok) return null;
+        const html = await pageResp.text();
+
+        // Extract captions JSON from ytInitialPlayerResponse
+        const match = /"captions":\s*(\{.*?\})\s*,\s*"videoDetails"/s.exec(html);
+        if (!match) return null;
+
+        let captionsObj: any;
+        try { captionsObj = JSON.parse(match[1]); } catch { return null; }
+
+        const tracks = captionsObj?.playerCaptionsTracklistRenderer?.captionTracks;
+        if (!Array.isArray(tracks) || tracks.length === 0) return null;
+
+        // Prefer English, fall back to first available
+        const enTrack = tracks.find((t: any) => t.languageCode === 'en') || tracks[0];
+        const captionUrl = enTrack?.baseUrl;
+        if (!captionUrl) return null;
+
+        // Fetch the timed text XML
+        const xmlResp = await fetch(captionUrl);
+        if (!xmlResp.ok) return null;
+        const xmlText = await xmlResp.text();
+
+        // Parse XML and extract text content
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(xmlText, 'text/xml');
+        const textNodes = doc.querySelectorAll('text');
+        const lines: string[] = [];
+        textNodes.forEach(node => {
+            const t = (node.textContent || '').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+            if (t.trim()) lines.push(t.trim());
+        });
+
+        return lines.length > 0 ? lines.join(' ') : null;
+    } catch {
+        return null;
+    }
+}
+
 // --- Usage timer ---
 
 let playStart: number | null = null;
@@ -92,7 +137,9 @@ async function onPlayAttempt(videoEl: HTMLVideoElement): Promise<boolean> {
     videoEl.pause();
     createOverlay();
 
-    const res = await sendMsg({ type: 'fetchTranscriptAndCheck', videoId });
+    // Try to get transcript directly from YouTube's captions
+    const localTranscript = await fetchYouTubeTranscript(videoId);
+    const res = await sendMsg({ type: 'fetchTranscriptAndCheck', videoId, transcript: localTranscript });
     if (!res?.ok) {
         const body = document.getElementById('ss-body');
         if (body) body.textContent = 'Transcript unavailable — video blocked.';
@@ -145,8 +192,54 @@ globalThis.addEventListener('yt-navigate-finish', () => {
     // Re-check for new video element after navigation
     const video = document.querySelector('video');
     if (video && video !== hookedVideo) hookVideoElement(video);
+    // Restart usage tracking after SPA navigation
+    (async () => {
+        try {
+            const settings = await sendMsg({ type: 'getSettings' });
+            if (!settings?.blockingEnabled) return;
+            const { usedSeconds, limitSeconds } = await sendMsg({ type: 'getRemainingFun' });
+            if (usedSeconds < limitSeconds) startUsageTimer();
+        } catch (err) {
+            console.error('[SmartBlocker] yt-navigate-finish handler failed:', err);
+        }
+    })();
 });
 globalThis.addEventListener('popstate', () => removeOverlay());
 
 observeForVideo();
+
+console.log('[SmartBlocker] content script loaded');
+
+// --- Start usage tracking on youtube.com even without video playback ---
+(async () => {
+    try {
+        const settings = await sendMsg({ type: 'getSettings' });
+        console.log('[SmartBlocker] settings:', settings);
+        if (!settings?.blockingEnabled) {
+            console.log('[SmartBlocker] blocking disabled, not tracking');
+            return;
+        }
+
+        const { usedSeconds, limitSeconds } = await sendMsg({ type: 'getRemainingFun' });
+        console.log('[SmartBlocker] usage:', usedSeconds, '/', limitSeconds, 'seconds');
+        if (usedSeconds >= limitSeconds) {
+            // Fun time exceeded on youtube.com — block if no video is playing (homepage/browse)
+            const videoId = getYouTubeVideoId();
+            if (!videoId) {
+                createOverlay();
+                const title = document.getElementById('ss-title');
+                const body = document.getElementById('ss-body');
+                if (title) title.textContent = 'Fun time limit reached';
+                if (body) body.textContent = 'Your daily fun time limit has been exceeded. YouTube browsing is blocked.';
+                const spinner = document.getElementById('ss-spinner');
+                if (spinner) spinner.style.display = 'none';
+            }
+        } else {
+            // Track browsing time on YouTube (even without video)
+            startUsageTimer();
+        }
+    } catch (err) {
+        console.error('[SmartBlocker] initialization failed:', err);
+    }
+})();
 

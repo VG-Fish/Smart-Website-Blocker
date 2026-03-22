@@ -25,7 +25,7 @@ const staticFiles = [
     { src: path.join(srcRoot, 'ui', 'styles.css'), dest: path.join(distRoot, 'styles.css') },
 ];
 
-function esbuildOptions(b, env = 'production') {
+function esbuildOptions(b, env = 'production', debug = false) {
     return {
         entryPoints: [b.entry],
         bundle: true,
@@ -34,7 +34,10 @@ function esbuildOptions(b, env = 'production') {
         format: 'iife',
         sourcemap: true,
         outfile: b.outfile,
-        define: { 'process.env.NODE_ENV': `"${env}"` },
+        define: {
+            'process.env.NODE_ENV': `"${env}"`,
+            '__DEBUG__': debug ? 'true' : 'false',
+        },
     };
 }
 
