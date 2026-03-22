@@ -16,8 +16,8 @@ app.add_middleware(
 @app.get("/api/transcript")
 def get_transcript(v: str = Query(..., description="YouTube video ID")):
     try:
-        transcript = YouTubeTranscriptApi.get_transcript(v)
-        text = " ".join(segment["text"] for segment in transcript)
+        transcript = YouTubeTranscriptApi().fetch(v)
+        text = " ".join(segment.text for segment in transcript)
         return {"ok": True, "transcript": text}
     except Exception as e:
         return JSONResponse(
