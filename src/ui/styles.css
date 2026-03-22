@@ -154,6 +154,46 @@ input[type="number"] {
     text-align: center
 }
 
+.fun-usage-display {
+    margin-bottom: 14px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: #e8f5e9;
+    border: 1px solid #c8e6c9;
+    color: #1b5e20;
+    font-size: 0.93em;
+    line-height: 1.5
+}
+
+.fun-usage-display.over-limit {
+    background: #ffebee;
+    border-color: #ffcdd2;
+    color: #b71c1c
+}
+
+.fun-usage-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: #c8e6c9;
+    margin-top: 8px;
+    overflow: hidden
+}
+
+.fun-usage-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: #43a047;
+    transition: width 0.3s ease
+}
+
+.fun-usage-display.over-limit .fun-usage-bar {
+    background: #ffcdd2
+}
+
+.fun-usage-display.over-limit .fun-usage-bar-fill {
+    background: #e53935
+}
+
 .fun-limit-hint {
     display: none;
     margin-top: 10px;

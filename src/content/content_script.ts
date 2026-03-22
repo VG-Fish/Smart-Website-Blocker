@@ -3,6 +3,9 @@
 
 declare const browser: any;
 
+// Polyfill: Firefox exposes `browser`, Chrome exposes `chrome`. Normalise to `browser`.
+if ((globalThis as any).browser === undefined) (globalThis as any).browser = (globalThis as any).chrome;
+
 function sendMsg(msg: any): Promise<any> {
     return browser.runtime.sendMessage(msg);
 }
@@ -139,6 +142,25 @@ function startUsageTimer(): void {
         if (elapsed >= 10) {
             await sendMsg({ type: 'addUsage', domain: 'youtube.com', seconds: elapsed });
             playStart = Date.now();
+
+            // Check if the limit was just reached and trigger a video check
+            const { usedSeconds, limitSeconds } = await sendMsg({ type: 'getRemainingFun' });
+            if (limitSeconds > 0 && usedSeconds >= limitSeconds) {
+                stopUsageTimer();
+                const video = document.querySelector('video');
+                if (video && !video.paused) {
+                    isPlayAttemptInProgress = true;
+                    const wasMuted = video.muted;
+                    video.muted = true;
+                    const allowed = await onPlayAttempt(video);
+                    if (allowed) {
+                        video.muted = wasMuted;
+                    } else {
+                        video.pause();
+                    }
+                    isPlayAttemptInProgress = false;
+                }
+            }
         }
     }, 5000);
 }
@@ -170,7 +192,6 @@ document.addEventListener('play', (e) => {
 }, true);
 
 function blockShortsPage(): void {
-    if (shortsBlockerActive) return;
     shortsBlockerActive = true;
 
     // Pause every video currently on the page
@@ -264,8 +285,6 @@ async function onPlayAttempt(videoEl: HTMLVideoElement): Promise<boolean> {
     }
 
     videoEl.pause();
-    const wasMuted = videoEl.muted;
-    videoEl.muted = true;
     createOverlay(videoEl);
 
     // Check alignment and handle result
@@ -277,7 +296,6 @@ async function onPlayAttempt(videoEl: HTMLVideoElement): Promise<boolean> {
 
     if (res.aligned) {
         approvedVideoId = videoId;
-        videoEl.muted = wasMuted;
         removeOverlay();
         videoEl.play();
         return true;
@@ -300,8 +318,18 @@ function hookVideoElement(videoEl: HTMLVideoElement): void {
     videoEl.addEventListener('play', async () => {
         if (isPlayAttemptInProgress) return;
         isPlayAttemptInProgress = true;
+
+        // Mute immediately to prevent audio from playing
+        const wasMuted = videoEl.muted;
+        videoEl.muted = true;
+
         const allowed = await onPlayAttempt(videoEl);
-        if (!allowed) videoEl.pause();
+        if (allowed) {
+            // Restore original mute state if video is allowed
+            videoEl.muted = wasMuted;
+        } else {
+            videoEl.pause();
+        }
         isPlayAttemptInProgress = false;
     });
 
@@ -329,12 +357,13 @@ globalThis.addEventListener('yt-navigate-finish', () => {
     // Re-check for new video element after navigation
     const video = document.querySelector('video');
     if (video && video !== hookedVideo) hookVideoElement(video);
-    // Block Shorts on SPA navigation, then handle normal usage tracking
+    // Block Shorts immediately on SPA navigation; async check below may unblock if setting is off.
+    if (isYouTubeShorts()) blockShortsPage();
     (async () => {
         try {
             const settings = await sendMsg({ type: 'getSettings' });
-            if (isYouTubeShorts() && settings?.blockShorts) {
-                blockShortsPage();
+            if (isYouTubeShorts()) {
+                if (!settings?.blockShorts) deactivateShortsBlocker();
                 return;
             }
             if (!settings?.blockingEnabled) return;
@@ -347,6 +376,8 @@ globalThis.addEventListener('yt-navigate-finish', () => {
 });
 globalThis.addEventListener('popstate', () => removeOverlay());
 
+// Block Shorts immediately (before async settings fetch); unblocked below if setting is off.
+if (isYouTubeShorts()) blockShortsPage();
 observeForVideo();
 
 // --- React to settings changes (e.g. blocking re-enabled while video is playing) ---
@@ -397,9 +428,9 @@ console.log('[SmartBlocker] content script loaded');
         const settings = await sendMsg({ type: 'getSettings' });
         console.log('[SmartBlocker] settings:', settings);
 
-        // Block Shorts on initial page load
-        if (isYouTubeShorts() && settings?.blockShorts) {
-            blockShortsPage();
+        // Shorts were already blocked synchronously above; unblock here if setting is off.
+        if (isYouTubeShorts()) {
+            if (!settings?.blockShorts) deactivateShortsBlocker();
             return;
         }
 

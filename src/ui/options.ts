@@ -56,6 +56,15 @@ function showValidationMsg(msg: string) {
     }, 3000);
 }
 
+function formatTime(totalSeconds: number): string {
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+}
+
 async function submitQuizAnswers(questions: any[], answers: any[]) {
     let correct = 0;
     for (let i = 0; i < questions.length; i++) {
@@ -171,6 +180,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const blockShortsCheckbox = document.getElementById('blockShortsCheckbox') as HTMLInputElement | null;
     const blockingStatus = document.getElementById('blockingStatus');
     const blockingToggleBtn = document.getElementById('blockingToggleBtn') as HTMLButtonElement | null;
+    const funUsageDisplay = document.getElementById('funUsageDisplay');
 
     let settings = await browser.runtime.sendMessage({ type: 'getSettings' });
 
@@ -187,6 +197,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (blockingStatus) blockingStatus.textContent = settings.blockingEnabled ? 'Blocking is currently enabled.' : 'Blocking is currently disabled.';
     if (blockingToggleBtn) blockingToggleBtn.textContent = settings.blockingEnabled ? 'Disable blocking' : 'Enable blocking';
     renderGoals(settings.goals || []);
+
+    // --- Fun time usage display ---
+
+    async function updateFunUsage() {
+        if (!funUsageDisplay) return;
+        try {
+            const { usedSeconds, limitSeconds } = await browser.runtime.sendMessage({ type: 'getRemainingFun' });
+            const pct = limitSeconds > 0 ? Math.min((usedSeconds / limitSeconds) * 100, 100) : 0;
+            const overLimit = limitSeconds > 0 && usedSeconds >= limitSeconds;
+
+            funUsageDisplay.className = 'fun-usage-display' + (overLimit ? ' over-limit' : '');
+            funUsageDisplay.innerHTML =
+                `<strong>YouTube today:</strong> ${formatTime(usedSeconds)} used of ${formatTime(limitSeconds)}` +
+                (limitSeconds > 0
+                    ? `<div class="fun-usage-bar"><div class="fun-usage-bar-fill" style="width:${pct}%"></div></div>`
+                    : '');
+        } catch {
+            funUsageDisplay.textContent = 'Could not load usage data.';
+        }
+    }
+
+    updateFunUsage();
+    setInterval(updateFunUsage, 15_000);
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) updateFunUsage();
+    });
 
     // --- Event listeners ---
 
@@ -227,6 +263,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await browser.runtime.sendMessage({ type: 'saveSettings', settings });
         const plural = val === 1 ? '' : 's';
         createToast(`Fun time limit set to ${val} minute${plural} per day`);
+        updateFunUsage();
     });
 
     newGoalInput?.addEventListener('keydown', async (ev) => {

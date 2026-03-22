@@ -1,154 +1,102 @@
 # Smart Site Blocker
 
-Smart Site Blocker is a small browser extension prototype that helps manage and limit distraction on sites such as YouTube while promoting learning-focused usage.
+A browser extension that limits distraction on YouTube by enforcing daily watch-time limits and checking whether videos align with your learning goals.
 
-Purpose
-- Provide a lightweight extension that can be iterated on from `src/` during development.
-- Use the build helpers to produce a flat `dist/` output suitable for packaging and distribution.
+## Features
 
-Project layout (important files)
-- `manifest.json` — extension manifest. For development this project references files under `src/`.
-- `src/` — source files: `background/`, `content/`, `ui/`, and `utils/`.
-- `scripts/` — simple build/watch helpers that copy `src/` -> `dist/`.
-- `dist/` — build output (auto-generated). This directory is intentionally ignored by default to avoid committing generated files.
+- **Daily time limit** — set a daily "fun time" budget for YouTube. Once exceeded, only educational videos are allowed.
+- **Goal alignment check** — when your limit is reached, the extension fetches the video's transcript and uses the Cerebras AI API to decide whether it matches your learning goals. Silent overlay is shown while checking (no audio plays).
+- **YouTube Shorts blocking** — optionally block all Shorts.
+- **Goal management** — add, edit, reorder, and delete learning goals. Goals are validated by the AI before saving.
+- **Quiz** — generate a short quiz based on your goals; passing it temporarily disables blocking.
+- **Keyboard shortcut** — `Cmd+Shift+L` (Mac) / `Ctrl+Shift+L` opens settings.
 
-Quick start — development
-1. Edit sources under `src/`.
-2. Load the extension for development:
-	- Firefox: open `about:debugging#/runtime/this-firefox`, choose "Load Temporary Add-on" and select `manifest.json` from the project root.
-	- Chrome: open `chrome://extensions`, enable Developer mode, click "Load unpacked" and select this project root.
+## Requirements
 
-Quick start — build/package
-1. Install dev dependencies (one-time):
+- A [Cerebras](https://cerebras.ai) API key for AI-powered alignment checks and quiz generation.
+- Create a `.env` file in the project root:
 
-```bash
-npm install
+```
+CEREBRAS_API_KEY=your_key_here
 ```
 
-2. Produce a distributable copy in `dist/` (TypeScript sources are compiled with esbuild):
+Without a key, the extension falls back to basic keyword matching for alignment and static fallback quiz questions.
 
-````markdown
-# Smart Site Blocker
+## Project layout
 
-Smart Site Blocker is a browser extension prototype that helps manage and limit distraction on sites such as YouTube while promoting learning-focused usage.
-
-Purpose
-- Provide a lightweight extension that can be iterated on from `src/` during development.
-- Use build helpers to produce a flat `dist/` output suitable for packaging and distribution.
-
-Repository layout (important files)
-- `manifest.json` — extension manifest (references built runtime files in `dist/` for background/content).
-- `src/` — TypeScript source files: `background/`, `content/`, `ui/`, and `utils/` (canonical source).
-- `scripts/` — Node.js build/watch runners (use `node scripts/build.js` or `npm run build`).
-- `dist/` — build output (auto-generated). This directory is intentionally ignored by default to avoid committing generated files.
-
-What changed recently
-- Build/watch runners were converted to plain Node.js (no `ts-node` required). Use `node scripts/build.js` or `npm run build`.
-- `esbuild` was moved to `dependencies` and upgraded to `^0.27.4` to address a security advisory.
-- Redundant generated `.js` copies in `src/` were removed; the TypeScript files under `src/` are canonical.
-
-Quick start — development
-1. Edit sources under `src/`.
-2. Install dependencies (one-time):
-
-```bash
-npm install
+```
+manifest.json          — MV2 manifest (Firefox / default)
+manifest.dev.json      — MV3 manifest (Chrome dev)
+src/
+  background/          — service worker: AI calls, storage, usage tracking
+  content/             — content script injected into YouTube pages
+  ui/                  — options page, popup, styles
+  utils/               — .env loader
+scripts/               — Node.js build & watch helpers
+dist/                  — build output (auto-generated, do not edit)
 ```
 
-# Smart Site Blocker
+## Quick start
 
-Smart Site Blocker is a browser extension prototype that helps manage and limit distraction on sites such as YouTube while promoting learning-focused usage.
-
-Overview
-- Edit TypeScript sources under `src/`. Build outputs go to `dist/` and are used at runtime.
-- The project provides two manifest variants so you can test in Firefox (MV2 temporary add-on) and keep MV3 for Chrome.
-
-Repository layout (important files)
-- `manifest.json` — default Manifest V3 (used for Chrome / MV3-capable browsers).
-- `manifest.firefox.json` — Manifest V2 (for Firefox temporary installs that block MV3 service workers).
-- `src/` — TypeScript source files: `background/`, `content/`, `ui/`, and `utils/`.
-- `scripts/` — Node.js build/watch runners. `scripts/build.js` now accepts `--target=chrome|firefox`.
-- `dist/` — build output (auto-generated).
-
-Quick start
 1. Install dependencies (one-time):
 
 ```bash
 npm install
 ```
 
-2. Build (produce files in `dist/`):
+2. Add your Cerebras API key to `.env` (see Requirements above).
+
+3. Build:
 
 ```bash
 npm run build
 ```
 
-Build targets
-- Default (Chrome/MV3):
+## Loading the extension
+
+**Chrome (MV3):**
+- Build with the default target, then open `chrome://extensions`, enable Developer mode, click "Load unpacked" and select the project root.
+
+**Firefox (MV2 temporary add-on):**
+- Build with `--target=firefox`, then open `about:debugging#/runtime/this-firefox` → "Load Temporary Add-on" and select `manifest.json`.
+
+## Build commands
 
 ```bash
-node scripts/build.js
-# or
-npm run build
-```
-
-- Firefox (generate MV2 manifest into `dist/`):
-
-```bash
-node scripts/build.js --target=firefox
-# or
-npm run build -- --target=firefox
-```
-
-- Useful flag: `--overwrite-root` will also copy built runtime files and the chosen manifest to the project root (handy for rapid temporary loads):
-
-```bash
-node scripts/build.js --target=firefox --overwrite-root
-```
-
-Loading the extension
-- Firefox (temporary add-on):
-  - Build with `--target=firefox` (or rename `manifest.firefox.json` -> `manifest.json`), then open `about:debugging#/runtime/this-firefox` → "Load Temporary Add-on" and pick the repository's `manifest.json` (or the `dist/manifest.json`).
-  - Inspect the background worker via the "Inspect" link on the about:debugging page to see `console.log` output.
-
-- Chrome:
-  - Build (default target), then open `chrome://extensions`, enable Developer mode, click "Load unpacked" and choose the project root.
-
-Commands summary
-
-```bash
-# Build (default chrome)
+# Default build (Chrome MV3)
 npm run build
 
-# Build for firefox (MV2 manifest)
+# Firefox build (copies MV2 manifest to dist/)
 npm run build -- --target=firefox
 
-# Build + copy built files to project root
+# Copy built files to project root (useful for quick Firefox reloads)
 npm run build -- --overwrite-root
 
-# Watch mode (rebuilds on change)
+# Watch mode (rebuilds on source changes)
 npm run watch
 ```
 
-Notes
-- `dist/` is generated — edit `src/` (TypeScript). Do not edit `dist/` directly.
-- `manifest.firefox.json` is MV2 and intended only for temporary installs/testing in Firefox. Keep `manifest.json` as MV3 for Chrome/modern browsers.
-- If you want, I can add `manifest.dev.json` or update `scripts/watch.js` to support `--target` as well.
+## Permissions used
 
-Generated on: 2026-03-21
+| Permission | Reason |
+|---|---|
+| `storage` | Save settings and daily usage data |
+| `tabs` | Open the options page in a new tab |
+| `activeTab` | Detect the current YouTube tab |
+| `*://*.youtube.com/*` | Inject content script; fetch transcripts from YouTube |
+| `*://youtu.be/*` | Handle short YouTube links |
+| `*://api.cerebras.ai/*` | Send transcripts for AI alignment checks and quiz generation |
 
 ## Code quality — SonarCloud
 
-This project uses [SonarCloud](https://sonarcloud.io) for static analysis (bugs, code smells, security hotspots).
+This project uses [SonarCloud](https://sonarcloud.io) for static analysis.
 
 ### Setup (one-time, local only)
 
-`sonar-project.properties` is gitignored so each developer keeps their own local copy.
-
-1. Copy the template and fill in your values:
+`sonar-project.properties` is gitignored. Create it from the template:
 
 ```bash
-cp sonar-project.properties.example sonar-project.properties   # if an example exists, otherwise create from scratch
+cp sonar-project.properties.example sonar-project.properties
 ```
 
 Minimum required content:
@@ -163,7 +111,7 @@ sonar.exclusions=node_modules/**,dist/**
 sonar.typescript.tsconfigPath=tsconfig.json
 ```
 
-2. Export your SonarCloud token (never hardcode it in the file):
+Export your token (never hardcode it):
 
 ```bash
 export SONAR_TOKEN=your_token_here
@@ -174,5 +122,3 @@ export SONAR_TOKEN=your_token_here
 ```bash
 npm run sonar
 ```
-
-Results are published to your SonarCloud project dashboard at sonarcloud.io.

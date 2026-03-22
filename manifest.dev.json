@@ -12,8 +12,7 @@
     "host_permissions": [
         "*://*.youtube.com/*",
         "*://youtu.be/*",
-        "*://r.jina.ai/*",
-        "*://api.openrouter.ai/*"
+        "*://api.cerebras.ai/*"
     ],
     "background": {
         "service_worker": "background.js"

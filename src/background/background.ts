@@ -49,21 +49,6 @@ async function getUsageForDomainToday(domain: string): Promise<number> {
     return usage[today]?.[domain] || 0;
 }
 
-async function fetchTranscript(videoId: string): Promise<string | null> {
-    const url = `https://r.jina.ai/http://youtube.com/watch?v=${videoId}`;
-    console.log('[API] fetchTranscript →', url);
-    try {
-        const resp = await fetch(url);
-        console.log('[API] fetchTranscript ←', resp.status, resp.statusText);
-        if (!resp.ok) throw new Error('r.jina.ai fetch failed');
-        const text = await resp.text();
-        console.log('[API] fetchTranscript body length:', text.length);
-        return text;
-    } catch (err) {
-        console.warn('[API] fetchTranscript error:', err);
-        return null;
-    }
-}
 
 async function callCerebras(prompt: string, model = 'llama3.1-8b'): Promise<any> {
     const key = ENV_VARS.CEREBRAS_API_KEY;
@@ -200,8 +185,7 @@ async function generateQuiz(settings: any): Promise<any> {
 const handlers: Record<string, (msg: any) => Promise<any>> = {
     async fetchTranscriptAndCheck(msg) {
         const settings = await getSettings();
-        // Use transcript from content script (YouTube captions) if available, else fall back to jina.ai
-        const transcript = msg.transcript || await fetchTranscript(msg.videoId);
+        const transcript = msg.transcript;
         if (!transcript) {
             // Without transcript, we should not permissively allow playback. Keep blocking behavior.
             return { ok: false, error: 'no_transcript' };

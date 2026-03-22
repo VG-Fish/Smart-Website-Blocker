@@ -9,8 +9,7 @@
         "activeTab",
         "*://*.youtube.com/*",
         "*://youtu.be/*",
-        "*://r.jina.ai/*",
-        "*://api.openrouter.ai/*"
+        "*://api.cerebras.ai/*"
     ],
     "background": {
         "scripts": [
