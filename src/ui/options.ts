@@ -8,7 +8,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const goalsList = document.getElementById('goalsList') as HTMLElement | null;
     const funLimit = document.getElementById('funLimit') as HTMLInputElement | null;
     const funLimitHint = document.getElementById('funLimitHint') as HTMLElement | null;
-    const saveBtn = document.getElementById('saveBtn') as HTMLButtonElement | null;
     const genQuizBtn = document.getElementById('genQuizBtn') as HTMLButtonElement | null;
     const quizArea = document.getElementById('quizArea') as HTMLElement | null;
 
@@ -27,20 +26,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // --- Event listeners ---
 
-    saveBtn?.addEventListener('click', async () => {
-        settings.funLimitMinutes = Number(funLimit?.value) || 0;
-        await browser.runtime.sendMessage({ type: 'saveSettings', settings });
-        createToast('Settings saved');
-    });
-
-    funLimit?.addEventListener('keydown', (ev) => {
-        if (ev.key !== 'Enter') return;
+    funLimit?.addEventListener('change', async () => {
         const val = Number(funLimit.value);
         const valid = funLimit.value.trim() !== '' && Number.isInteger(val) && val >= 0;
         if (funLimitHint) {
             funLimitHint.style.display = 'block';
             funLimitHint.style.color = valid ? '#2e7d32' : '#b00020';
             funLimitHint.textContent = valid ? `✓ ${val} minute${val === 1 ? '' : 's'} per day` : 'Enter a whole number ≥ 0';
+        }
+        if (valid) {
+            settings.funLimitMinutes = val;
+            await browser.runtime.sendMessage({ type: 'saveSettings', settings });
+            createToast('Fun time limit saved');
         }
     });
 

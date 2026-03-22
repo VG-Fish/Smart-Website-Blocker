@@ -11,32 +11,35 @@
     <div class="container">
         <h1>Settings</h1>
 
-        <label>Your learning goals (make each goal specific — e.g., "I want to learn about using superposition in
-            circuits.")</label>
-        <div class="row">
-            <input id="newGoalInput" type="text"
-                placeholder="e.g., I want to learn about using superposition in circuits." />
-            <button id="addGoalBtn">Add Goal</button>
-        </div>
-        <div id="goalsList" style="margin-top:8px"></div>
+        <section class="settings-section">
+            <h2 class="section-title">Learning Goals</h2>
+            <label>Make each goal specific — e.g., "I want to learn about using superposition in circuits."</label>
+            <div class="row">
+                <input id="newGoalInput" type="text"
+                    placeholder="e.g., I want to learn about using superposition in circuits." />
+                <button id="addGoalBtn">Add Goal</button>
+            </div>
+            <div class="goals-divider">Added goals</div>
+            <div id="goalsList"></div>
+        </section>
 
-        <hr style="margin:16px 0;border:none;border-top:1px solid #ddd" />
+        <section class="settings-section">
+            <h2 class="section-title">Fun Time Limit</h2>
+            <label>Minutes per day:</label>
+            <input id="funLimit" type="number" min="0" />
+            <div id="funLimitHint"></div>
+        </section>
 
-        <label>Fun time limit (minutes per day):</label>
-        <input id="funLimit" type="number" min="0" />
-        <div id="funLimitHint" style="display:none;font-size:0.85em;margin-top:2px"></div>
-
-        <div style="font-size:0.95em;color:#333;margin:6px 0;">
+        <div class="api-note">
             To avoid storing sensitive API keys in extension storage, place your API keys in a local <code>.env</code>
             file at the extension root (this file is ignored by git). See README for details.
         </div>
 
         <div class="row buttons">
-            <button id="saveBtn">Save</button>
             <button id="genQuizBtn">Take quiz</button>
         </div>
 
-        <div id="quizArea" style="display:none; margin-top:20px"></div>
+        <div id="quizArea" style="display:none; margin-top:24px"></div>
     </div>
 
     <script src="options.js"></script>
