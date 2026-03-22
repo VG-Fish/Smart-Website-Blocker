@@ -297,6 +297,7 @@ async function onPlayAttempt(videoEl: HTMLVideoElement): Promise<boolean> {
     if (res.aligned) {
         approvedVideoId = videoId;
         removeOverlay();
+        startUsageTimer();
         videoEl.play();
         return true;
     }
@@ -367,8 +368,7 @@ globalThis.addEventListener('yt-navigate-finish', () => {
                 return;
             }
             if (!settings?.blockingEnabled) return;
-            const { usedSeconds, limitSeconds } = await sendMsg({ type: 'getRemainingFun' });
-            if (usedSeconds < limitSeconds) startUsageTimer();
+            // Timer starts only when a video play event fires (via hookVideoElement → onPlayAttempt)
         } catch (err) {
             console.error('[SmartBlocker] yt-navigate-finish handler failed:', err);
         }
@@ -447,9 +447,6 @@ console.log('[SmartBlocker] content script loaded');
             if (!videoId) {
                 createBanner('Fun time limit reached', 'Your daily fun time limit has been exceeded. Video playback is restricted.');
             }
-        } else {
-            // Track browsing time on YouTube (even without video)
-            startUsageTimer();
         }
     } catch (err) {
         console.error('[SmartBlocker] initialization failed:', err);
